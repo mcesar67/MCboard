@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+
+# KiCad working files
+fp-info-cache
+*.kicad_prl
+*-backups/
+.history/
+drc*.rpt
+
+# Boards generated in the default folder: <cols>x<rows>_YYYYMMDDTHHMM/
+*x*_????????T????/
+
+# A board edited by hand, with its Gerbers; not part of the generator
+protoboard_generator/ATO/
+protoboard_generator/ATO2/
+
+
+# What the planner writes next to its test boards
+tests/**/*.pdf
+
+# Instructions for Claude Code, not part of the project
+CLAUDE.md
+.claude/
