@@ -260,7 +260,9 @@ hand.
   footprints bring their silkscreen to `F.SilkS`. The `gr_text` goes to `User.2`. The connection marks are not moved,
   because bars or outlines cover the parts: `User.1` has instead one dotted line, `WORKING_CONNECTION_WIDTH` wide, from
   end to end of each strip and bus, whatever `--silk` says. Dots mark the connection more faintly than dashes, which at
-  this width leave only two or so between two holes. `kicad_file.py` reads both layers back as `F.SilkS`, so a plan from
+  this width leave only two or so between two holes. Every drill, mounting holes included, has a solid circle of the same
+  width on `User.1`, so that the holes can still be seen under a part. `kicad_file.py` skips those circles, since the PDF
+  draws the drills itself, and reads the rest of both layers back as `F.SilkS`, so a plan from
   a working copy shows those lines, solid because the reader keeps no line style, where a plan from the plain board
   shows its silkscreen; the PDF paints the drills after the silkscreen so that the lines stop at the holes. Layer colours belong to KiCad's theme, so the file does not
   set them. Its `.kicad_pro` sets the default line width of other layers to `MANUAL_LINE_WIDTH` (0.3), because KiCad's

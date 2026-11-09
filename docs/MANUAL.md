@@ -477,7 +477,7 @@ only its own folder. Refresh the plugins, and restart KiCad if it still behaves 
 
    | Layer | Contents |
    |---|---|
-   | `User.1`, `MCboard.Connections` | A thin dotted line through the holes of each strip and bus, in place of the board's bars or outlines, which would cover your parts. |
+   | `User.1`, `MCboard.Connections` | A thin dotted line through the holes of each strip and bus, in place of the board's bars or outlines, which would cover your parts, and a thin solid circle around every drill. |
    | `User.2` | The board's labels, name and text. |
    | `User.3`, `MCboard.ManualWires` | Wires you decide yourself, see [2.8](#28-decide-part-of-the-wiring-yourself). |
    | `User.4`, `MCboard.ManualChevrons` | Chevrons you decide yourself. |

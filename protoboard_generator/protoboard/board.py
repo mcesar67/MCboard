@@ -947,7 +947,9 @@ class Board:
     def working_items(self):
         """Return the items for a working copy. The board's top text moves to its own layer. Its connection marks
         would cover the parts, so a thin line through the holes of each strip and bus takes their place, whatever
-        --silk says. These lines are not in self.art: they are never fabricated."""
+        --silk says, with a circle of the same width around every drill, so that the holes still show under a part
+        whose body hides the pads. None of this is in self.art: it is never fabricated."""
+        a = self.args
         moved = []
         for item in self.items:
             if item.startswith("  (gr_") and '(layer "F.SilkS")' in item:
@@ -960,6 +962,12 @@ class Board:
                 moved.append(f"  (gr_line (start {fmt(x1)} {fmt(y1)}) (end {fmt(x2)} {fmt(y2)})"
                              f" (stroke (width {fmt(WORKING_CONNECTION_WIDTH)}) (type dot))"
                              f' (layer "{WORKING_CONNECTIONS_LAYER[0]}") (uuid "{new_uuid()}"))')
+        drills = [(self.x(c), self.y(r), a.drill) for c in range(a.cols) for r in self.pattern.hole_rows]
+        drills += [(x, y, a.mount_drill) for x, y in self.npth]
+        for x, y, drill in drills:
+            moved.append(f"  (gr_circle (center {fmt(x)} {fmt(y)}) (end {fmt(x + drill / 2)} {fmt(y)})"
+                         f" (stroke (width {fmt(WORKING_CONNECTION_WIDTH)}) (type solid)) (fill no)"
+                         f' (layer "{WORKING_CONNECTIONS_LAYER[0]}") (uuid "{new_uuid()}"))')
         return moved
 
     def text(self, working=False):

@@ -22,7 +22,7 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from .constants import MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, WORKING_SILK_LAYERS
+from .constants import MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, WORKING_CONNECTIONS_LAYER, WORKING_SILK_LAYERS
 from .font import text_strokes, text_width
 from .pattern import row_label
 
@@ -340,6 +340,9 @@ def board_art(tree):
     art = {layer: [] for layer in ART_LAYERS}
     for kind in ("gr_text", "gr_line", "gr_arc", "gr_rect", "gr_circle", "gr_poly"):
         for node in kids(tree, kind):
+            # The circles around the drills of a working copy: the PDF draws the drills itself.
+            if kind == "gr_circle" and layer_of(node) == WORKING_CONNECTIONS_LAYER[0]:
+                continue
             # A working copy keeps its top text and its connection lines elsewhere; the PDF draws them as silkscreen.
             layer = "F.SilkS" if layer_of(node) in WORKING_SILK_LAYERS else layer_of(node)
             if layer in art:
