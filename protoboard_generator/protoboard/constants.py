@@ -80,7 +80,8 @@ JOB_STACKUP = [
 BOARD_THICKNESS = 1.6
 # The top silkscreen of the board in a --working-copy, kept apart from that of the parts placed on it.
 # KiCad can only show or hide whole layers, and footprints bring their silkscreen to F.SilkS.
-WORKING_CONNECTIONS_LAYER = ("User.1", "MCboard.Connections")  # bars and lines
+WORKING_CONNECTIONS_LAYER = ("User.1", "MCboard.Connections")  # a dotted line through the holes of each strip and bus
+WORKING_CONNECTION_WIDTH = 0.05  # thinner than MANUAL_LINE_WIDTH, so that wires stand out over it
 WORKING_LABELS_LAYER = ("User.2", "MCboard.Labels")            # rows, columns, name and --text
 WORKING_SILK_LAYERS = (WORKING_CONNECTIONS_LAYER[0], WORKING_LABELS_LAYER[0])
 MANUAL_WIRE_LAYER = ("User.3", "MCboard.ManualWires")        # wires drawn by hand for the plan

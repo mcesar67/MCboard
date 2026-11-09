@@ -133,7 +133,7 @@ def pdf_face(board, side, x, y, marks=None):
     is seen from its own side, so the text of the bottom one reads normally and its column 1 is on the
     right. marks holds more operators per side, in fab coordinates, to paint on top of everything."""
     a = board.args
-    # Painted from the bottom up: copper, the white drill on top of it, then everything in black.
+    # Painted from the bottom up: copper, the silkscreen, the white drill, then the outline and the marks.
     if side == "B":
         ops = ["q", f"-1 0 0 1 {x + board.board_size()[0]:.6f} {y:.6f} cm"]
     else:
@@ -141,12 +141,14 @@ def pdf_face(board, side, x, y, marks=None):
     r, g, b = PDF_COPPER_RGB
     ops += [f"{r} {g} {b} rg", f"{r} {g} {b} RG"]
     ops += pdf_layer(board, board.art[f"{side}.Cu"])
+    ops += ["0 0 0 RG 0 0 0 rg"]
+    ops += pdf_layer(board, board.art[f"{side}.SilkS"])
     # The real copper is a ring: the Gerber's disc loses its centre when the board is drilled.
+    # After the silkscreen, because the lines of a working copy go through the holes.
     ops += ["1 1 1 rg"]
     for hx, hy in board.pth:
         ops.append(pdf_circle(*board.from_corner(hx, hy), a.drill / 2) + " f")
     ops += ["0 0 0 RG 0 0 0 rg"]
-    ops += pdf_layer(board, board.art[f"{side}.SilkS"])
     ops += pdf_layer(board, board.art["Edge.Cuts"])
     ops += [f"{pdf_number(PDF_DRILL_LINE)} w"]
     radius = a.mount_drill / 2

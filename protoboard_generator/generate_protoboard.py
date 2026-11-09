@@ -64,7 +64,8 @@ written next to it with the same name:
                       the top side, or on a second page if both do not fit at 100%
 
 With --working-copy, also <name>_working.kicad_pcb, .kicad_pro and .kicad_dru: the same board for
-placing parts on, with its own top silkscreen on User.1 and User.2. Never order from it.
+placing parts on, with thin connection lines on User.1 and its top text on User.2 instead of
+its top silkscreen. Never order from it.
 
 The script needs the 'protoboard', 'rules' and 'fonts' folders next to it.
 

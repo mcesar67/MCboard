@@ -256,14 +256,19 @@ hand.
 
 ### Working copy and board swap
 
-- `--working-copy` puts the board's top silkscreen on `User.1` (bars, lines) and `User.2` (`gr_text`), because KiCad
-  shows or hides whole layers and footprints bring their silkscreen to `F.SilkS`. `kicad_file.py` reads both back as
-  `F.SilkS`, so the plan's PDF is the same with either file. Layer colours belong to KiCad's theme, so the file does not
+- `--working-copy` takes the board's top silkscreen off `F.SilkS`, because KiCad shows or hides whole layers and
+  footprints bring their silkscreen to `F.SilkS`. The `gr_text` goes to `User.2`. The connection marks are not moved,
+  because bars or outlines cover the parts: `User.1` has instead one dotted line, `WORKING_CONNECTION_WIDTH` wide, from
+  end to end of each strip and bus, whatever `--silk` says. Dots mark the connection more faintly than dashes, which at
+  this width leave only two or so between two holes. `kicad_file.py` reads both layers back as `F.SilkS`, so a plan from
+  a working copy shows those lines, solid because the reader keeps no line style, where a plan from the plain board
+  shows its silkscreen; the PDF paints the drills after the silkscreen so that the lines stop at the holes. Layer colours belong to KiCad's theme, so the file does not
   set them. Its `.kicad_pro` sets the default line width of other layers to `MANUAL_LINE_WIDTH` (0.3), because KiCad's
   0.1 is hard to see over the pads.
 - Every item the generator writes is a member of one locked group named `MCboard` (`Board.group()`, from the first uuid
   of each item, which is its own). A board can then be appended to a project's PCB and deleted again with one click,
-  leaving the parts and the manual lines, which does away with a script to swap boards. Locked, because a click on a hole
+  leaving the parts and the manual lines, which does away with a script to swap boards. Its members are written a few to
+  a line, because KiCad cannot load a file with a line of about 1 MB, which a single line reaches near 100x100. Locked, because a click on a hole
   selects the whole group and a drag would move the board under the parts. The group changes neither the Gerbers nor
   the plan.
 - KiCad's grid origin is set to hole A1, so that a grid dividing 2.54 falls on the holes.

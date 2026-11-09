@@ -340,7 +340,7 @@ def board_art(tree):
     art = {layer: [] for layer in ART_LAYERS}
     for kind in ("gr_text", "gr_line", "gr_arc", "gr_rect", "gr_circle", "gr_poly"):
         for node in kids(tree, kind):
-            # A working copy keeps the top silkscreen elsewhere, but it is the same drawing.
+            # A working copy keeps its top text and its connection lines elsewhere; the PDF draws them as silkscreen.
             layer = "F.SilkS" if layer_of(node) in WORKING_SILK_LAYERS else layer_of(node)
             if layer in art:
                 art[layer] += shape_primitives(node)

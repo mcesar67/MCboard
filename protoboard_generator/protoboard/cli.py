@@ -143,8 +143,8 @@ def main():
                     help="mounting hole diameter in mm (3.2, for M3)")
     ap.add_argument("--no-mount-holes", action="store_true", help="do not add mounting holes")
     ap.add_argument("--working-copy", action="store_true",
-                    help="also write <name>_working.kicad_pcb, for placing parts and planning: its top silkscreen "
-                         "is on User.1 (bars and lines) and User.2 (labels), apart from that of the parts, and "
+                    help="also write <name>_working.kicad_pcb, for placing parts and planning: instead of its top silkscreen "
+                         "it has a thin dotted line through the connected holes on User.1 and the labels on User.2, and "
                          "lines and arcs drawn on User.3 are wires of your own for the plan, and lines on User.4 chevrons to "
                          "close; the plan button draws on User.5. "
                          "Never order from it")

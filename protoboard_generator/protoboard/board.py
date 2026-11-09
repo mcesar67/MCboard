@@ -19,8 +19,8 @@ import uuid
 from .constants import (FORMAT_VERSION, GERBER_LAYERS, ISLAND_SIDE, ISLAND_TIE, ISLAND_TIE_INTO_PAD,
                         LABEL_CHAR_WIDTH, LABEL_GAP, LABEL_THICKNESS, LABEL_TO_EDGE,
                         MOUNT_TO_EDGE, MOUNT_TO_LABEL, NAME_GAP, NAME_GAP_TOP, NAME_TO_EDGE, SILK_BAR_SLACK,
-                        MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, PLAN_MARKS_LAYER, SILK_BAR_STEPS, SILK_TO_PAD, SOLDER_MASK_MIN_WEB, WORKING_CONNECTIONS_LAYER,
-                        WORKING_LABELS_LAYER)
+                        MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, PLAN_MARKS_LAYER, SILK_BAR_STEPS, SILK_TO_PAD, SOLDER_MASK_MIN_WEB, WORKING_CONNECTION_WIDTH,
+                        WORKING_CONNECTIONS_LAYER, WORKING_LABELS_LAYER)
 from .font import text_extent, text_strokes, text_width
 from .mounting import SideSpec, corner_strip, holes_that_fit, mount_min_distance, placed, side_strip, widest_spacing
 from .pattern import RowPattern
@@ -538,6 +538,24 @@ class Board:
                 for c in range(a.cols - 1):
                     self.silk_bar(self.x(c), self.y(r), self.x(c + 1), self.y(r), a.bus)
 
+    def connection_runs(self):
+        """Yield the end holes (x1, y1, x2, y2) of every strip and bus. A strip of one hole has both ends equal."""
+        cols, rows = self.args.cols, self.args.rows
+        for c in range(cols):
+            r = 0
+            while r < rows:
+                if self.pattern.is_bus(r) or self.pattern.is_space(r):
+                    r += 1
+                    continue
+                start = r
+                while r + 1 < rows and self.pattern.joined(r):
+                    r += 1
+                yield self.x(c), self.y(start), self.x(c), self.y(r)
+                r += 1
+        for r in range(rows):
+            if self.pattern.is_bus(r):
+                yield self.x(0), self.y(r), self.x(cols - 1), self.y(r)
+
     def silkscreen(self):
         """Draw the connection marks chosen with --silk on the top side."""
         a = self.args
@@ -559,20 +577,8 @@ class Board:
             # Pitch must leave room for two capsule lines between adjacent holes.
             if 2 * self.silk_clear_radius() + a.silk_width / 2 >= a.pitch:
                 sys.exit("Not enough room between holes for the 'outline' silkscreen style.")
-            for c in range(cols):
-                r = 0
-                while r < rows:
-                    if self.pattern.is_bus(r) or self.pattern.is_space(r):
-                        r += 1
-                        continue
-                    start = r
-                    while r + 1 < rows and self.pattern.joined(r):
-                        r += 1
-                    self.silk_capsule(self.x(c), self.y(start), self.x(c), self.y(r))
-                    r += 1
-            for r in range(rows):
-                if self.pattern.is_bus(r):
-                    self.silk_capsule(self.x(0), self.y(r), self.x(cols - 1), self.y(r))
+            for run in self.connection_runs():
+                self.silk_capsule(*run)
 
     # Text is drawn by KiCad from the gr_text item, and for the Gerbers from the font file, which holds
     # KiCad's own glyphs. Mirroring and rotating below must therefore do what KiCad does.
@@ -939,13 +945,21 @@ class Board:
     # The final .kicad_pcb: a fixed header, the list of nets and then every item built above.
 
     def working_items(self):
-        """Return the items with the board's own top silkscreen moved to the layers of a working copy."""
+        """Return the items for a working copy. The board's top text moves to its own layer. Its connection marks
+        would cover the parts, so a thin line through the holes of each strip and bus takes their place, whatever
+        --silk says. These lines are not in self.art: they are never fabricated."""
         moved = []
         for item in self.items:
             if item.startswith("  (gr_") and '(layer "F.SilkS")' in item:
-                layer = WORKING_LABELS_LAYER if item.startswith("  (gr_text") else WORKING_CONNECTIONS_LAYER
-                item = item.replace('(layer "F.SilkS")', f'(layer "{layer[0]}")', 1)
+                if not item.startswith("  (gr_text"):
+                    continue
+                item = item.replace('(layer "F.SilkS")', f'(layer "{WORKING_LABELS_LAYER[0]}")', 1)
             moved.append(item)
+        for x1, y1, x2, y2 in self.connection_runs():
+            if (x1, y1) != (x2, y2):
+                moved.append(f"  (gr_line (start {fmt(x1)} {fmt(y1)}) (end {fmt(x2)} {fmt(y2)})"
+                             f" (stroke (width {fmt(WORKING_CONNECTION_WIDTH)}) (type dot))"
+                             f' (layer "{WORKING_CONNECTIONS_LAYER[0]}") (uuid "{new_uuid()}"))')
         return moved
 
     def text(self, working=False):
@@ -992,5 +1006,7 @@ class Board:
     def group(items):
         """A locked group of every item, so that the whole MCboard can be selected and deleted at once in a
         board where parts were placed on it, and is not moved by mistake. Each item's own uuid is its first."""
-        members = " ".join(f'"{UUID_RE.search(item).group(1)}"' for item in items)
-        return f'  (group "MCboard" (uuid "{new_uuid()}") (locked yes) (members {members}))'
+        ids = [f'"{UUID_RE.search(item).group(1)}"' for item in items]
+        # A few to a line: KiCad cannot load a file with a line of about 1 MB, which one line would be on a large board.
+        members = "\n".join("    " + " ".join(ids[i:i + 10]) for i in range(0, len(ids), 10))
+        return f'  (group "MCboard" (uuid "{new_uuid()}") (locked yes) (members\n{members}\n  ))'

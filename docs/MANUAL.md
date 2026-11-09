@@ -477,7 +477,7 @@ only its own folder. Refresh the plugins, and restart KiCad if it still behaves 
 
    | Layer | Contents |
    |---|---|
-   | `User.1` | The board's bars and lines, moved off `F.Silkscreen` so that they do not mix with your parts' silkscreen. |
+   | `User.1`, `MCboard.Connections` | A thin dotted line through the holes of each strip and bus, in place of the board's bars or outlines, which would cover your parts. |
    | `User.2` | The board's labels, name and text. |
    | `User.3`, `MCboard.ManualWires` | Wires you decide yourself, see [2.8](#28-decide-part-of-the-wiring-yourself). |
    | `User.4`, `MCboard.ManualChevrons` | Chevrons you decide yourself. |
@@ -644,7 +644,7 @@ Order the board from the zip of the board you settled on, never from the project
 | Message | What it means | What to do |
 |---|---|---|
 | `Short: R1.2 (VCC, hole D8) and R2.2 (DIS, hole F8) are joined by the copper of strip D8 to F8.` | Two nets have pins on the same strip. | Move one of the parts. |
-| `TRIG cannot reach strip D5 to F5 (R2.1, U1.6): no path through chevrons and wires clear of the parts.` | That strip has no way out: its holes all have a pin or are under a part, or the way is taken. This is usually the placement, not the search. | Move the part, for example so that a chip straddles a bus. |
+| `TRIG cannot reach strip D5 to F5 (R2.1, U1.6): no path through chevrons and wires clear of the parts.` | Usually the placement, not the search: a strip of the net has no way out, because its holes all have a pin or are under a part, or the way is taken. A second line names the strip when it is shut in, which may be another strip of the net and not the one in this message. | Move the part, for example so that a chip straddles a bus. If the strip has a hole under the part, you can instead [draw a wire](#28-decide-part-of-the-wiring-yourself) from it on `MCboard.ManualWires` (`User.3`). |
 | `Not on the board, so not in this plan: C1, J1, ...` | Those parts have no pin on the hole grid. | Place them. |
 | `J2.1 is 0.16 mm off the centre of hole J6.` | The pin counts as in the hole, but is not centred. | Move the part, or set the grid origin on A1. |
 | `Manual lines join DIS and GND: D1 to C4. They are left out.` | Your lines join two nets, directly or through other lines. None of them is used. | Delete or move the wrong one. |
@@ -654,8 +654,8 @@ Order the board from the zip of the board you settled on, never from the project
 | `Manual lines A11 to C13 join no net, so the plan keeps off their strips.` | No pin with a net is on those strips. | Delete the lines if you do not need them. They can block another net. |
 | `A manual line ends 0.60 mm from the nearest hole, A11. It is left out.` | An end of a wire is not on a hole (up to 0.25 mm counts), or two lines of a wire do not quite meet. | Draw it again on the 50 mil grid. |
 | `Manual lines through D9, near A11, near C11, A13 are not one wire with two ends. They are left out.` | Three or more lines meet at a corner, or they close a loop. | Make them meet sharply on a hole, where each is a wire of its own. |
-| `The line on User.4 from C4 to C5 is not across one chevron. It is left out.` | A line on the chevron layer must join two holes with a chevron between them. | Move it, or draw it on `User.3` if it is a wire. |
-| `The manual wire C5 to D5 is across chevron C5-D5. To close the chevron instead, draw the line on User.4.` | A straight wire of yours joins the two holes of a chevron. | Keep it if you want a wire there. Otherwise move the line to `User.4`. |
+| `The line on MCboard.ManualChevrons (User.4) from C4 to C5 is not across one chevron. It is left out.` | A line on the chevron layer must join two holes with a chevron between them. | Move it, or draw it on `User.3` if it is a wire. |
+| `The manual wire C5 to D5 is across chevron C5-D5. To close the chevron instead, draw the line on MCboard.ManualChevrons (User.4).` | A straight wire of yours joins the two holes of a chevron. | Keep it if you want a wire there. Otherwise move the line to `User.4`. |
 
 ## 2.11 Limits
 

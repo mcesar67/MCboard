@@ -41,6 +41,11 @@ BLOCKED = "\0"  # owner of a strip that holds only pins connected to nothing
 MANUAL_NO_NET = "(no net)"  # owner of strips joined by manual lines where no pin has a net
 
 
+def layer_title(layer):
+    """A manual layer as a message names it: the name a working copy shows, then the one any other board shows."""
+    return f"{layer[1]} ({layer[0]})"
+
+
 def is_no_connect(net):
     """Say whether a pad's net needs no connection: none, or KiCad's unconnected- nets."""
     return not net or net.startswith("unconnected-")
@@ -152,7 +157,8 @@ class Plan:
     terminals: dict = field(default_factory=dict)  # net: set of strips
     pins: dict = field(default_factory=dict)      # strip: list of Pin
     attempts: int = 0
-    no_way_out: set = field(default_factory=set)  # missing strips with no hole for a wire
+    no_way_out: set = field(default_factory=set)  # strips of incomplete nets shut in: see shut_in_strips()
+    wire_room: set = field(default_factory=set)   # those of them with a hole, under a part, for a wire of the user's
     manual: set = field(default_factory=set)      # the chevrons and wires that come from manual lines
 
     @property
@@ -665,10 +671,10 @@ def manual_links(board, plan):
         far = [(hole, gap) for hole, gap in ends if gap > PLAN_PIN_TOLERANCE]
         chevron = between.get(frozenset(hole for hole, _ in ends))
         if far:
-            plan.errors.append(f"A line on {MANUAL_CHEVRON_LAYER[0]} ends {far[0][1]:.2f} mm from the nearest hole, "
+            plan.errors.append(f"A line on {layer_title(MANUAL_CHEVRON_LAYER)} ends {far[0][1]:.2f} mm from the nearest hole, "
                                f"{far[0][0].name}. It is left out.")
         elif not chevron:
-            plan.errors.append(f"The line on {MANUAL_CHEVRON_LAYER[0]} from {ends[0][0].name} to {ends[1][0].name} "
+            plan.errors.append(f"The line on {layer_title(MANUAL_CHEVRON_LAYER)} from {ends[0][0].name} to {ends[1][0].name} "
                                f"is not across one chevron. It is left out.")
         elif chevron not in closed:
             closed.add(chevron)
@@ -687,7 +693,7 @@ def manual_links(board, plan):
             if chevron and not wire.corners:
                 plan.warnings.append(f"The manual wire {wire.first.name} to {wire.second.name} is across chevron "
                                      f"{chevron.name}. To close the chevron instead, draw the line on "
-                                     f"{MANUAL_CHEVRON_LAYER[0]}.")
+                                     f"{layer_title(MANUAL_CHEVRON_LAYER)}.")
     return links
 
 
@@ -762,8 +768,10 @@ def add_manual(problem, plan):
     has only to link them up. Returns {net: Route} with what they add to each net."""
     board = problem.board
     for layer, count in board.manual_other.items():
-        kinds = "lines or arcs" if layer == MANUAL_WIRE_LAYER[0] else "straight lines"
-        plan.warnings.append(f"Shapes on {layer} that are not {kinds} are left out: {count}.")
+        wires = layer == MANUAL_WIRE_LAYER[0]
+        kinds = "lines or arcs" if wires else "straight lines"
+        title = layer_title(MANUAL_WIRE_LAYER if wires else MANUAL_CHEVRON_LAYER)
+        plan.warnings.append(f"Shapes on {title} that are not {kinds} are left out: {count}.")
     manual = {}
     for strips, links in manual_groups(manual_links(board, plan)):
         names = ", ".join(sorted(link_name(link) for link in links))
@@ -1011,6 +1019,28 @@ def under_part(board, plan, chevron):
     return None
 
 
+def shut_in_strips(problem, plan):
+    """The strips of incomplete nets with no way out: no hole for a wire, and chevrons only to other nets. The search
+    grows from one strip and names those it did not reach, but the one shut in may well be where it started, so what
+    it did reach is looked at as well, as a whole."""
+    owner = dict(problem.owner)
+    for net, route in plan.routes.items():
+        owner.update((strip, net) for strip in route.strips)
+
+    def shut(side, net):
+        return (all(not problem.free.get(strip) for strip in side)
+                and all(owner.get(there, net) != net
+                        for strip in side for there, _ in problem.edges.get(strip, ()) if there not in side))
+
+    found = set()
+    for net, missing in plan.missing.items():
+        reached = plan.routes[net].strips - missing
+        if reached and shut(reached, net):
+            found |= reached
+        found |= {strip for strip in missing if shut({strip}, net)}
+    return found
+
+
 def solve(board):
     """The Plan for a PlacedBoard."""
     plan = Plan(board, {})
@@ -1029,7 +1059,9 @@ def solve(board):
     for wire in problem.manual_wires:
         check_manual_wire(board, plan, wire)
     check_shared_pads(plan, problem.manual_wires)
-    plan.no_way_out = {s for strips in plan.missing.values() for s in strips if not problem.free.get(s)}
+    plan.no_way_out = shut_in_strips(problem, plan)
+    plan.wire_room = {h.strip for h in board.holes.values()
+                      if h.strip in plan.no_way_out and (h.col, h.row) not in problem.occupied}
     for net, chevron in plan.chevrons:
         part = under_part(board, plan, chevron)
         if part:
@@ -1053,14 +1085,18 @@ def report(plan):
             lines.append("Not on the board, so not in this plan: " + ", ".join(plan.unplaced) + ".")
         lines += plan.errors
         for net, strips in sorted(plan.missing.items()):
-            where = ", ".join(f"{strip_label(board, s)} ({', '.join(p.name for p in plan.pins[s])})"
-                              for s in sorted(strips))
-            lines.append(f"{net} cannot reach {where}: no path through chevrons and wires clear of the parts.")
-            boxed = sorted(strips & plan.no_way_out)
+            def named(group):
+                return ", ".join(f"{strip_label(board, s)} ({', '.join(p.name for p in plan.pins[s])})"
+                                 if plan.pins.get(s) else strip_label(board, s) for s in sorted(group))
+
+            lines.append(f"{net} cannot reach {named(strips)}: no path through chevrons and wires clear of the parts.")
+            boxed = plan.routes[net].strips & plan.no_way_out
             if boxed:
-                names = ", ".join(strip_label(board, s) for s in boxed)
-                lines.append(f"  {names}: every hole has a pin or is under a part, and its chevrons lead "
-                             "to other nets. Move a part.")
+                fix = "Move a part."
+                if boxed & plan.wire_room:
+                    fix = f"Move a part, or draw a wire on {layer_title(MANUAL_WIRE_LAYER)} from a hole under it."
+                lines.append(f"  {named(boxed)}: every hole has a pin or is under a part, and its chevrons lead "
+                             f"to other nets. {fix}")
     chevrons = plan.chevrons
     if not chevrons and not plan.wires:
         lines += ["", "No chevrons to close and no wires to add."]
