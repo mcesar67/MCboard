@@ -24,9 +24,10 @@ import zlib
 from pathlib import Path
 
 from .constants import (PDF_CAPTION_ASCENT, PDF_CAPTION_GAP, PDF_CAPTION_SIZE, PDF_COMMAND_ASCENT,
-                        PDF_COMMAND_BOTTOM, PDF_COMMAND_GAP, PDF_COMMAND_LEADING, PDF_COMMAND_LINES, PDF_COMMAND_SIZE, PDF_COPPER_RGB, PDF_DRILL_LINE,
-                        PDF_LOCKED_TRIES, PDF_MARGIN, PDF_NOTE_DESCENT, PDF_NOTE_LEADING, PDF_NOTE_SIZE, PDF_PAGE, PDF_SCALES,
-                        PDF_SIDE_GAP)
+                        PDF_COMMAND_BOTTOM, PDF_COMMAND_GAP, PDF_COMMAND_LEADING, PDF_COMMAND_LINES, PDF_COMMAND_SIZE,
+                        PDF_COPPER_RGB, PDF_DRILL_LINE,
+                        PDF_HELVETICA_WIDTHS, PDF_LOCKED_TRIES, PDF_MARGIN, PDF_NOTE_DESCENT, PDF_NOTE_EDGE,
+                        PDF_NOTE_LEADING, PDF_NOTE_SIZE, PDF_PAGE, PDF_SCALES, PDF_SIDE_GAP, LAYER_REPORT_TITLE)
 from .geometry import circumcentre, is_counterclockwise
 
 
@@ -186,10 +187,16 @@ def pdf_page(board, faces, drawing_size, scale, rotated, caption, marks=None, co
     ops.append(f"BT /F1 {PDF_CAPTION_SIZE / scale:.4f} Tf 0 {baseline:.4f} Td "
                f"({caption}Scale: {scale:.0%}) Tj ET")
     # Above the drawing, for the same reasons. The last line is the one closest to it.
-    for i, line in enumerate(reversed(board.mount_report())):
+    across, along = (PDF_PAGE[0], PDF_PAGE[1]) if rotated else (PDF_PAGE[1], PDF_PAGE[0])
+    lines = pdf_notes(board, across / 2 - scale * height / 2)
+    # From the drawing's left edge, or further left if a line would pass the right margin.
+    left = along / 2 - scale * width / 2
+    start = max(PDF_MARGIN, min(left, along - PDF_MARGIN - max([note_width(x) for x in lines], default=0)))
+    for i, line in enumerate(reversed(lines)):
         baseline = height + (PDF_CAPTION_GAP + PDF_NOTE_DESCENT * PDF_NOTE_SIZE
                              + i * PDF_NOTE_LEADING) / scale
-        ops.append(f"BT /F1 {PDF_NOTE_SIZE / scale:.4f} Tf 0 {baseline:.4f} Td ({line}) Tj ET")
+        ops.append(f"BT /F1 {PDF_NOTE_SIZE / scale:.4f} Tf {pdf_number((start - left) / scale)} {baseline:.4f} Td "
+                   f"({line}) Tj ET")
     ops.append("Q")
     if command:
         # Rotated, the bottom of the page is the drawing's left edge, where the caption and the notes start.
@@ -201,6 +208,29 @@ def pdf_page(board, faces, drawing_size, scale, rotated, caption, marks=None, co
                     - (PDF_CAPTION_ASCENT + PDF_NOTE_DESCENT) * PDF_CAPTION_SIZE)
         ops += pdf_command(command, free)
     return ops
+
+
+def note_width(text):
+    """Width of a line of notes on paper, in mm."""
+    return sum(PDF_HELVETICA_WIDTHS[ord(c) - 32] if " " <= c <= "~" else 1000 for c in text) * PDF_NOTE_SIZE / 1000
+
+
+def pdf_notes(board, room):
+    """The lines above the drawing: the mounting holes, then the working copy's layers, if any, with room mm
+    between the drawing and the page edge. The layers take three lines where there is room, else two, else one;
+    the mounting holes never give way, as before the layers were added."""
+    notes = board.mount_report()
+    layers = board.layer_report()
+    if not layers:
+        return notes
+    copper, user = (", ".join(part) for part in layers)
+    layouts = [[LAYER_REPORT_TITLE, copper, user], [copper + ",", user], [copper + ", " + user]]
+    for layout in layouts:
+        n = len(notes) + len(layout)
+        top = PDF_CAPTION_GAP + PDF_NOTE_DESCENT * PDF_NOTE_SIZE + (n - 1) * PDF_NOTE_LEADING
+        if top + PDF_CAPTION_ASCENT * PDF_NOTE_SIZE <= room - PDF_NOTE_EDGE:
+            return notes + layout
+    return notes + layouts[-1]
 
 
 def pdf_pages(board, marks=None, command=None):

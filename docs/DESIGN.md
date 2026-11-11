@@ -8,8 +8,11 @@ change. How to use them is in the [user manual](MANUAL.md); this file does not r
 - Generator: `protoboard_generator/generate_protoboard.py`, standard library only, so that KiCad is needed only to
   check or edit its output. It is a thin entry point: the code is in `protoboard/`, whose `__init__.py` is the reading
   guide. It needs `protoboard/`, `rules/` and `fonts/` next to it.
-- Planner: `protoboard_generator/plan_board.py`, and the KiCad button in `kicad_plugin/`, installed by
-  `install_kicad_plugin.py`, which copies the code into KiCad's plugin folder.
+- Planner: `protoboard_generator/plan_board.py`, and the KiCad buttons in `kicad_plugin/`, installed by
+  `install_kicad_plugin.py`, which copies the code into KiCad's plugin folder. In `protoboard/`, `plan.py` holds what
+  a plan is made of and its report, `manual.py` takes in the user's tracks, `planner.py` searches, and `apply.py`
+  works out what the apply, nets and clear buttons change. In `kicad_plugin/`, `button.py` is what the four buttons
+  share, and each `<name>_action.py` is one button.
 - Font: `protoboard_generator/fonts/newstroke.txt`, rebuilt by `fonts/extract_newstroke.py`.
 - Fab rules: `protoboard_generator/rules/`, from kicad-druid (MIT; see `rules/ORIGIN.txt`).
 - Pictures in `docs/`: `kicad-cli pcb render` of a 14x13.
@@ -184,6 +187,12 @@ The generator writes these itself, without KiCad, from a copy of the geometry ke
   at 100 %.
 - The scale note, the mounting hole distances and the command line do not count for the fit, so they never lower the
   scale; on a board that nearly fills the page they enter the margin (by at most 5 mm, 9.5 mm and one line).
+- With `--working-copy`, the console and the PDF list the working copy's layers, KiCad's name with the working copy's
+  (`layer_report()`), because KiCad's dialogs, the plan's messages and the manual name them either way. In the PDF
+  they follow the mounting hole notes, in three lines, or two or one when three would come within `PDF_NOTE_EDGE` of
+  the page edge, so that a board that nearly fills the page loses none of them. The notes start at the drawing's left
+  edge, or further left when a line would pass the right margin; widths come from Helvetica's metrics
+  (`PDF_HELVETICA_WIDTHS`). The fab files and the plain board's PDF do not change.
 - The command line at the foot leaves out `-o`, whose path may say more about the computer than the reader needs, and
   `--working-copy` and `--wire-layers`, which only add a file and shape it. Lines break between options, never inside one (`PDF_COMMAND_LINES`).
 - Both fonts declare `WinAnsiEncoding`: without it a viewer uses the fonts' standard encoding, which draws the `'` of a
@@ -203,8 +212,8 @@ The generator writes these itself, without KiCad, from a copy of the geometry ke
 ## Planner
 
 - `protoboard/kicad_file.py` reads the `.kicad_pcb` with its own parser, not `pcbnew`, so it does not depend on the
-  installed KiCad. Only `kicad_plugin/plan_action.py` talks to KiCad, through the IPC API (`kicad-python`), and it is
-  kept thin. The SWIG bindings (`pcbnew`) it used before are deprecated and go in KiCad 11.
+  installed KiCad. Only the files in `kicad_plugin/` talk to KiCad, through the IPC API (`kicad-python`), and they
+  are kept thin. The SWIG bindings (`pcbnew`) it used before are deprecated and go in KiCad 11.
   It reads file formats 7, 9 and 10; format 10 has no top-level net table.
 - Generated footprints are `board_only`, with refs `PBH`, `PBJP`, `PBJT`, `PBIS`, `PBMH`, so a netlist update neither
   deletes them nor matches them to a schematic's `H1` or `JP1`. The planner goes by footprint name (`Hole`,
@@ -233,53 +242,81 @@ The generator writes these itself, without KiCad, from a copy of the geometry ke
   has all the strips of its B side under it, all needing bus A; straddling a bus (rows F and I) gives every pin a way out.
 - Random pins on a 30x61 (117 pins, 24 nets): 85 chevrons, 108 wires, 2 strips unconnected, about 6 s; 10M steps do not
   change that. It is not a realistic circuit, but it sets the scale of the limits.
+- The plan's PDF (`plan_pdf.py`) draws each wire in the colour of the `MCboard.Wires<n>` layer it is on, or would go on
+  when applied (`wire_layer_numbers()`, shared with apply), in the order of Dupont jumper colours. Orange and yellow
+  are left out, as they hardly show on the copper or on white, and brown is darkened for the copper. Chevrons are
+  magenta rather than red, since red is a wire colour. Each side also shows the other side's chevrons, dashed, so the
+  top view gives the whole job.
 
-### Manual lines
+### Manual tracks
 
-Lines on `User.3` and `User.4` (`MANUAL_WIRE_LAYER`, `MANUAL_CHEVRON_LAYER`, `add_manual()`) are soldering decided by
-hand.
+Unlocked tracks on the working copy's inner layers (`manual_tracks()`, `add_manual()`) are soldering decided by hand:
+on `MCboard.Wires<n>` a wire, on `MCboard.Chevrons` a closed chevron.
 
+- They are tracks, not drawn lines, so that KiCad's ratsnest counts them once apply has given them a net, and so that
+  the router keeps the user's wires apart from each other. Inner layers, because no copper is made from them: the
+  working copy is never sent to a fab, and its own `F.Cu` and `B.Cu` stay as the generator wrote them.
+- The layers are taken by place in the board's layer table (`mcboard_layers()`): every inner layer is a wire layer
+  but the last, `MCboard.Chevrons`. Not by name, because a name is only a label that the user, or a board import, can
+  change, and KiCad's API cannot set it back: **File > Append Board** in KiCad 10.0.8 keeps the project's names for
+  the layers the project already has, whatever its dialog is told, so names on a swapped board cannot be counted on.
+  A name that is neither KiCad's own nor an `MCboard` one means the inner layers are not a working copy's, so none is used and the plan has an error, which keeps apply
+  off; a differing `MCboard` name is a warning that says which layer is taken as what.
+- Locked tracks on those layers are left out: they are the ones apply added (see below), and the plan already has them.
 - Chevrons and wires have a layer each because on one layer they look the same, and because then a one-pitch wire
-  across a chevron is an ordinary line. A straight line on `User.4` across one chevron closes it, the bottom one if
-  there are two; any other line there is an error.
-- On `User.3` an end within `PLAN_PIN_TOLERANCE` of a hole is on it, and ends within `PLAN_MANUAL_MEET` are the same
-  point. Lines meeting sharply on a hole are separate wires, which is how two wires go to one pad. A wire passing over a
-  pad needs telling apart from that, so its corner is drawn rounded: where an arc meets another line or arc the point
-  is a `Bend`, even over a hole, and connects to nothing. Sharp corners off any hole are corners too. Only the two ends
-  of a wire join strips.
-- Lines that share strips are taken together. If they join two nets they are all an error and left out, since keeping
-  some would be a guess about which is wrong. Otherwise their strips go to that net at no cost (`manual_links`), and
-  their holes stop being free. Without a net, the strips are kept from the plan under `MANUAL_NO_NET`.
+  across a chevron is an ordinary track. A straight track on `MCboard.Chevrons` across one chevron closes it, the
+  bottom one if there are two; any other track there is an error, and an arc is left out with a note.
+- On a wire layer an end within `PLAN_PIN_TOLERANCE` of a hole is on it, and ends within `PLAN_MANUAL_MEET` are the
+  same point. Tracks meeting sharply on a hole are separate wires, which is how two wires go to one pad. A wire passing
+  over a pad needs telling apart from that, so its corner is rounded, which KiCad's router draws as an arc track: where
+  an arc meets another track or arc the point is a `Bend`, even over a hole, and connects to nothing. Sharp corners
+  off any hole are corners too. Only the two ends of a wire join strips.
+- Each wire layer is chained on its own (`manual_links`): tracks on two layers that end at the same point are not one
+  wire, as they are not in KiCad, which joins layers only through a via or a pad.
+- Tracks that share strips are taken together. If they join two nets they are all an error and left out, since
+  keeping some would be a guess about which is wrong. Otherwise their strips go to that net at no cost, and their
+  holes stop being free. Without a net, the strips are kept from the plan under `MANUAL_NO_NET`.
 - A manual wire may run under a part or end on a pin, because only the user knows whether it fits: `check_manual_wire()`
   reports it and `check()` does not reject it. `check_shared_pads()` warns about manual wires sharing a hole.
-- The layer names `MCboard.ManualWires` and `MCboard.ManualChevrons` are only labels: the file identifies layers by
-  their canonical names, which is what the planner reads.
+- Drawn shapes on those layers are not tracks: they are counted and left out with a note, rather than read as wires.
 
 ### Working copy and board swap
 
 - `--working-copy` takes the board's top silkscreen off `F.SilkS`, because KiCad shows or hides whole layers and
-  footprints bring their silkscreen to `F.SilkS`. The `gr_text` goes to `User.2`. The connection marks are not moved,
-  because bars or outlines cover the parts: `User.1` has instead one dotted line, `WORKING_CONNECTION_WIDTH` wide, from
-  end to end of each strip and bus, whatever `--silk` says. Dots mark the connection more faintly than dashes, which at
-  this width leave only two or so between two holes. Every drill, mounting holes included, has a solid circle of the same
-  width on `User.1`, so that the holes can still be seen under a part. `kicad_file.py` skips those circles, since the PDF
-  draws the drills itself, and reads the rest of both layers back as `F.SilkS`, so a plan from
-  a working copy shows those lines, solid because the reader keeps no line style, where a plan from the plain board
-  shows its silkscreen; the PDF paints the drills after the silkscreen so that the lines stop at the holes. Layer colours belong to KiCad's theme, so the file does not
-  set them. Its `.kicad_pro` sets the default line width of other layers to `MANUAL_LINE_WIDTH` (0.3), because KiCad's
-  0.1 is hard to see over the pads.
-- The working copy has `--wire-layers` inner copper layers (2 by default), named `MCboard.Wires1` on
-  (`WIRE_LAYER_NAME`), for wires as tracks, so that KiCad's ratsnest can see them; several, to tell wire colours
-  apart. Tracks of different nets crossing on one layer do not join in the ratsnest, so one layer is enough for that.
-  They start at the first inner layer after the board's own copper, which is `In1.Cu` today, so that a board with inner
-  planes would keep them. KiCad numbers inner layers from `In1` with no gaps, only up to `In30` (`MAX_INNER_COPPER`),
-  and loads no file with an odd number of copper layers, so an odd count is raised by one, with a message: an extra
-  layer with no name among the named ones looked like something else. The
-  generator writes them because KiCad's API cannot add or rename a layer; whatever uses them must find them by name.
-  The plain board keeps its two copper layers.
+  footprints bring their silkscreen to `F.SilkS`. The working copy's user layers start at `User.5`, because a new KiCad
+  10 board already has `User.1` to `User.4`, and **File > Append Board** keeps the open board's names for the layers it
+  has: layers it lacks arrive with the working copy's names. The `gr_text` goes to `User.7`. The connection marks are
+  not moved, because bars or outlines cover the parts: `User.6` has instead one dotted line, `WORKING_CONNECTION_WIDTH`
+  wide, from end to end of each strip and bus, whatever `--silk` says. Dots mark the connection more faintly than
+  dashes, which at this width leave only two or so between two holes. Every drill, mounting holes included, has a solid
+  circle of the same width on `User.6`, so that the holes can still be seen under a part. `kicad_file.py` skips those
+  circles, since the PDF draws the drills itself, and reads the rest of both layers back as `F.SilkS`, so a plan from a
+  working copy shows those lines, solid because the reader keeps no line style, where a plan from the plain board shows
+  its silkscreen; the PDF paints the drills after the silkscreen so that the lines stop at the holes. Layer colours
+  belong to KiCad's theme, so the file does not set them. Its `.kicad_pro` sets the default line width of other layers
+  to `MANUAL_LINE_WIDTH` (0.3), because KiCad's 0.1 is hard to see over the pads, and its net class track width to
+  `APPLY_WIRE_TRACK` (0.3), because the router draws the user's wires with it, and `--track`, the strips' width, would
+  make them 1 mm wide.
+- The working copy's hole pads have `remove_unused_layers` and `keep_end_layers`: no pad on an inner layer but where
+  a track ends, so that wires and chevrons on those layers stand out and the router can pass between holes. A track
+  on an inner layer still connects to the hole (checked with pcbnew: apply leaves nothing unconnected). The plain
+  board keeps whole pads, which the Gerbers do not show on inner layers anyway.
+- The working copy has `--wire-layers` inner copper layers (1 by default), named `MCboard.Wires1` on
+  (`WIRE_LAYER_NAME`), for wires as tracks, and after them one more, `MCboard.Chevrons` (`CHEVRON_LAYER_NAME`), for
+  closed chevrons. Tracks, so that KiCad's ratsnest can see them; several wire layers only to tell wire colours apart,
+  since tracks of different nets crossing on one layer do not join in the ratsnest. They are all the working copy's
+  inner layers, from `In1.Cu`, which is what lets them be taken by place. A future board with inner planes must leave
+  them out of its working copy, which is never ordered; if a plane joined strips, the working copy would draw that
+  join on an MCboard layer instead, or the ratsnest would show those strips apart.
+  KiCad numbers inner layers from `In1` with no gaps, only up to `In30` (`MAX_INNER_COPPER`, so at most 29 wire
+  layers), and loads no file with an odd number of copper layers, so when the wire layers and `MCboard.Chevrons` come
+  to an odd number one wire layer is added, with a message: an extra layer with no name among the named ones looked
+  like something else. The generator writes them because KiCad's API cannot add or rename a layer (in kicad-python 0.8,
+  `UpdateBoardStackup` is not implemented). The names are for the user to read. The plain board keeps its two copper
+  layers.
 - Every item the generator writes is a member of one locked group named `MCboard` (`Board.group()`, from the first uuid
   of each item, which is its own). A board can then be appended to a project's PCB and deleted again with one click,
-  leaving the parts and the manual lines, which does away with a script to swap boards. Its members are written a few to
+  leaving the parts and the tracks, which does away with a script to swap boards. Its members are written a few to
   a line, because KiCad cannot load a file with a line of about 1 MB, which a single line reaches near 100x100. Locked, because a click on a hole
   selects the whole group and a drag would move the board under the parts. The group changes neither the Gerbers nor
   the plan.
@@ -287,10 +324,15 @@ hand.
 
 ### The button
 
-- It is an IPC API plugin (`plugin.json`, `requirements.txt`): KiCad runs `plan_action.py` in a process and Python
-  environment of its own, and the script reaches the open editor through a socket. It needs KiCad's API turned on.
+- It is an IPC API plugin (`plugin.json`, `requirements.txt`): KiCad runs each button's `<name>_action.py` in a
+  process and Python environment of its own, and the script reaches the open editor through a socket. It needs
+  KiCad's API turned on.
+  KiCad orders the buttons by action identifier, not by their place in `plugin.json`, so the identifiers start with
+  `step0-` to `step3-` to keep them in this order: nets, plan, apply, clear.
 - The marks go on `User.5`, named `MCboard.Plan` (`PLAN_MARKS_LAYER`). Each run replaces everything on that layer in
-  one commit, so one undo step. The API of KiCad 9 can neither add or name a layer nor make groups, so the marks are
+  one commit, so one undo step. The user's own chevrons and wires get no mark, as their tracks already show them
+  and a mark over a track hides what is left to do; the report and the PDF still list them, as the soldering guide.
+  The API of KiCad 9 can neither add or name a layer nor make groups, so the marks are
   known by their layer alone, and a board without the layer is refused with a note on how to add it; working copies
   have it. A `User.5` under another name is refused rather than emptied. The layer table is read from the board text.
 - The button never changes the layer's visibility: set from a plugin, the Layers panel and the view fall out of step,
@@ -298,10 +340,72 @@ hand.
 - KiCad makes that environment with `--system-site-packages`, and on Linux the system's `dist-packages` came ahead of
   it, so Ubuntu's protobuf 4 hid the 5.x that `kicad-python` needs. The script puts its environment's packages first
   before importing anything.
+- KiCad 10 turns away, as busy and doing nothing with them, the requests that read or change items while any tool but
+  selection is active, such as routing a track (`PCB_EDIT_FRAME::interactiveOperationInProgress`), and for a moment
+  during a save or a zone fill. Reading the board as text is not checked, so a run would plan and write the PDF and
+  then fail on the marks. `connect()` makes one checked request before anything else, and every request of both
+  buttons asks again for `BUSY_WAIT` seconds before the report says to press Esc. Waiting longer is no use: the tool
+  stays active until the user leaves it, and the request that runs a tool action is turned away too.
 - It plans what the editor has, saved or not, from the board's text (`get_as_string`) written to a temporary file.
-- The report is a tkinter window, since wx is KiCad's and not in the plugin's environment. Without tkinter it goes to
-  `<board>_plan.txt`, opened in the system's editor. Errors go to the same place, as KiCad 9 shows nothing a plugin
-  prints.
+- The API gives a plugin no dialog or message of KiCad's. The report is a page, `<board>_plan.html`, `_apply.html` or
+  `_clear.html`, opened in the system's browser with a link to the PDF (`show()`). A button that cannot do its work
+  says why on that page too (`fail()`), and exits with 0. KiCad 10 turns stderr or a nonzero exit, never what an
+  action prints, into a warning in the status bar (`STATUSBAR_WARNING_REPORTER`), which is easily missed and stays
+  after the page has said it all, so that is used only when the page cannot be written; KiCad 9 shows nothing.
+- The reports share one browser tab. A tab cannot be closed from outside, and a page opened from a file can neither
+  say it is open nor see the file change, so `report_server.py` serves the latest report on `127.0.0.1` in a process
+  of its own that outlives the button. The tab asks it every second whether a newer report is in and reloads; a button
+  opens a tab only when none has asked for 3 s. It serves only the latest report and the files it links to (the PDF,
+  as `/file/<n>`, since a page from a web address may not open a `file:` link), takes reports only with the token in
+  its state file in the temporary folder, and stops a minute after the last question. If it cannot be started, the
+  saved page is opened as a file.
+  Rejected: a tkinter window, which looks foreign beside KiCad and is missing from some Pythons, and wxPython in the
+  plugin's environment, which has no Linux wheel on PyPI and would be built on the first install.
+
+### The apply button
+
+- `apply_action.py` plans as the plan button does, then puts the plan into the copper, so that KiCad's ratsnest shows
+  what is left to wire. KiCad counts two pads as connected only through copper of their own net, so every hole,
+  chevron pad, island and generator track takes the net of the schematic that its strip carries (or the strip's own
+  name), each chevron to close becomes an `APPLY_CHEVRON_TRACK` track on `MCboard.Chevrons` between the two hole
+  centres, and each wire becomes `APPLY_WIRE_TRACK` tracks along its path on a wire layer. If the `.kicad_pro` beside
+  the board gives its `Default` net class a track width, both are drawn that wide instead (`project_track_width()`):
+  the router gives the user's tracks that width, and the two then look alike in a project of the user's own. The
+  wires of one net share a
+  layer, taking the layers in turn. The user's own tracks stay where they are and take the net of the holes they join
+  (`manual_nets()`: on each wire layer, the tracks meeting end to end are one wire). On `F.Cu` and `B.Cu` only nets
+  change, so the working copy's copper still matches the board's. `protoboard/apply.py` works out the changes; the
+  plugin makes them in one commit, so one undo.
+- It refuses a plan with errors, and a board without inner copper layers, rather than apply half a plan.
+- It writes `<board>_plan.pdf` with the plan button's `write_pdf()`, so the printed drawing follows what was applied.
+  The reader skips locked tracks, so an applied board gives the same plan, and the same PDF, as before applying.
+- Once the pads carry the schematic's nets, the pad net no longer names the strip, so apply writes the strip's own name
+  (`C<col>_R<row>`, `BUS_R<n>`) into the Value of each `Hole` footprint, which the generator sets to `hole`. The reader
+  takes the strip from the Value, or from the pad net while the Value is still `hole`. An island's hole is read from
+  the `F.Cu` tie that starts at its centre, since its pad net no longer tells it either.
+- Applied tracks are locked, and that is how they are told from the user's (`is_applied()`): a locked track on an
+  MCboard inner layer is the button's. Not a group: a group sent through the API resolves its members on the board,
+  and tracks created in the same commit reach the board only when it is pushed, so the group would come out empty. Not
+  where they are either, since the user's tracks lie on the same layers and may follow the same path. Pressing the
+  button again removes the locked ones first, so it follows a changed schematic or placement, and a planned track the
+  user unlocks becomes theirs, which is how to keep a wire the plan chose. A lock is also what the user would not set
+  by chance: KiCad draws tracks unlocked.
+- The pads are changed by updating whole footprints: an update of a pad alone is accepted and does nothing. Updated
+  footprints stay in the locked `MCboard` group.
+- KiCad's "Update PCB from Schematic" knows nothing of the strips, and may put pad nets back; pressing apply again
+  sets them right.
+- `clear_action.py` takes apply and the plan marks back in one commit: it uses `changes()` with `cleared()`, an
+  `Applied` that gives every hole its strip's own name as the generator does, adds no tracks, and gives each of the
+  user's tracks the net of the hole at one of its ends, as the router does. So the locked tracks on the MCboard inner
+  layers go, the pads and generator tracks get their own nets back, and the shapes on `User.5` go if it is named
+  `MCboard.Plan`. It does not plan, so it works on a board whose plan has errors. KiCad's global deletions were no
+  substitute: with the current layer chosen they still deleted items on other layers.
+- `nets_action.py` gives the nets of what is drawn, for wiring by hand: the planner runs with `search=False`, which
+  keeps the user's tracks and skips the route search and its checks, the slow part (0.04 s against 1.8 s on the 555
+  test board). It reads the locked tracks as the user's too (`read_board(locked=True)`), since an earlier apply put
+  them there and removing them would lose wiring the user may be following, and uses apply's `work_out()` and
+  `changes()` with `keep_locked`, so it adds and removes no tracks. `pieces()` counts the nets still in pieces for the
+  report. Its identifier, `step0-nets`, puts it first on the toolbar.
 
 ## Rejected options
 
@@ -331,8 +435,11 @@ hand.
 
 ## Checking changes
 
-Development uses KiCad 9.0.x. The generator writes KiCad 9 format (20241229), so that KiCad 9 opens it as its own file
-rather than one to convert; KiCad 7 and 8 cannot open it.
+Development uses KiCad 10.0.x, and KiCad 9.0.x for `--kicad 9`. The generator writes the format of the version that
+`--kicad` names, 20260206 for 10 by default or 20241229 for 9 (`FORMAT_VERSIONS`), so that KiCad opens the board as
+its own file rather than one to convert. The two differ only in the nets: KiCad 9 has a table of them at the top of the
+file and a pad or track refers to it by number (`Board.net_text()`), and KiCad 10 has no table and uses the name.
+Loaded in KiCad 10, both give the same pads, tracks and nets, and the same DRC. KiCad 7 and 8 open neither.
 
 ```bash
 python3 generate_protoboard.py --cols 8 --rows 13 -o /tmp/check/proto
@@ -358,18 +465,37 @@ After changing the planner, run `plan_board.py` on the boards in `tests/t555/`:
 - `placed.kicad_pcb`: TRIG cannot reach strip D5 to F5, whose holes all have a pin or are under a part.
 - `placed_across_bus.kicad_pcb`: a complete plan, 15 chevrons and 3 wires.
 - `imported.kicad_pcb`: all 6 parts not on the board.
-- Manual lines, added as `gr_line`s to a copy of `placed_across_bus.kicad_pcb`:
-  - `C4`-`D4` on `User.4` closes that chevron, and `D4`-`D8` on `User.3` is a wire from the same hole, both tagged
-    `manual`, with the same 15 chevrons and 3 wires;
-  - `D5`-`C5` on `User.3` is a wire with a warning, and `C4`-`C5` on `User.4` an error;
+- Manual tracks, added as `segment`s and `arc`s to a copy of `placed_across_bus.kicad_pcb` given `MCboard.Wires1`
+  (`In1.Cu`) and `MCboard.Chevrons` (`In2.Cu`) in its layer table, since the boards in `tests/t555/` have neither:
+  - `C4`-`D4` on `MCboard.Chevrons` closes that chevron, and `D4`-`D8` on `MCboard.Wires1` is a wire from the same
+    hole, both tagged `manual`, with the same 15 chevrons and 3 wires;
+  - `D5`-`C5` on `MCboard.Wires1` is a wire with a warning, and `C4`-`C5` on `MCboard.Chevrons` an error;
   - `D10`-`D4` with `D10`-`D8` are two wires sharing that pad;
-  - `D4` to `C7` with a `gr_arc` at `D5` and another at `C5` is one wire `corners near D5, near C5` that closes no
+  - `D4` to `C7` with an arc at `D5` and another at `C5` is one wire `corners near D5, near C5` that closes no
     chevron and joins neither of those strips;
-  - `F1`-`F10` warns that it runs under R2 and U1, and `C4`-`D1` is an error that joins DIS and GND.
+  - `F1`-`F10` warns that it runs under R2 and U1, and `C4`-`D1` is an error that joins DIS and GND;
+  - the same `C4`-`D4` and `D4`-`D8` locked are left out, giving the plan of the bare board;
+  - a wire whose two halves are on two wire layers is two tracks that each end off a hole, both left out;
+  - the first case with `In2.Cu` named `MCboard.Wires2`, or both inner layers left with KiCad's names, gives the same
+    plan, the first with a warning; with `In1.Cu` named `GND` the tracks are left out with an error, and apply
+    refuses.
 - The generator's PDF must not change when only the plan's PDF does, and with `--working-copy` the plan's PDF from
-  `b_working.kicad_pcb` must match that from `b.kicad_pcb`.
+  `b_working.kicad_pcb` must match that from `b.kicad_pcb` except for the silkscreen, which the working copy's
+  connection lines replace.
 
 After changing the button, press it twice in the KiCad window on a copy of a placed working copy: the marks must stay
 on `MCboard.Plan` (`User.5`), one set only, and one undo must take a run back. A board without that layer, and one
 whose `User.5` has another name, must be refused. The API needs a running KiCad, so this cannot run headless; the
 script's logic can, with `run_plan()` given a stand-in for the board object.
+
+After changing the apply button, on a copy of a placed working copy: press it, and the ratsnest must show only what the
+plan reports missing (nothing on a copy of `placed_across_bus.kicad_pcb`, TRIG on one of `placed.kicad_pcb`). Every
+track it adds must be locked. Pressing it again must leave the same number of tracks, one undo must take a press back,
+the `MCboard` group must stay locked, and the plan button must give the same plan after apply as before. With a
+chevron and a wire of the plan routed by hand first, as unlocked tracks, apply must keep them, give them their net,
+add the rest locked, and still leave nothing unconnected. The same edits can be made headless with pcbnew on
+a copy, to count the unconnected pads with `GetConnectivity().GetUnconnectedCount()`.
+
+After changing the clear button, apply on such a copy, then clear: every pad must have its net from before apply
+again, no locked track may be left on the MCboard inner layers, nothing may be left on `MCboard.Plan`, the user's
+tracks must still be there, and one undo must take the clear back.

@@ -1,7 +1,8 @@
 # Examples
 
 Boards generated as they are, ready to open in KiCad or to order. Each folder has the KiCad project, the zip for the fab
-and the A4 drawing. They were made with `--fab generic`, the default, which satisfies both JLCPCB and PCBWay.
+and the A4 drawing. They were made with `--fab generic`, the default, which satisfies both JLCPCB and PCBWay, and
+are in KiCad 10 format; add `--kicad 9` to the commands below for KiCad 9.
 
 | Folder | Board | Size |
 |---|---|---|

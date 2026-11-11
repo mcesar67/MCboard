@@ -9,7 +9,8 @@ import sys
 from pathlib import Path
 
 from .board import Board
-from .constants import MARGIN_DEFAULT, MARGIN_PLAIN, MAX_INNER_COPPER, MOUNT_MIN_SPACING, PDF_SCALES
+from .constants import (FORMAT_VERSIONS, KICAD_DEFAULT, LAYER_REPORT_TITLE, MARGIN_DEFAULT, MARGIN_PLAIN,
+                        MAX_INNER_COPPER, MOUNT_MIN_SPACING, PDF_SCALES)
 from .font import check_user_text
 from .gerber import write_fab_zip
 from .kicad_project import write_project
@@ -143,17 +144,21 @@ def main():
                     help="mounting hole diameter in mm (3.2, for M3)")
     ap.add_argument("--no-mount-holes", action="store_true", help="do not add mounting holes")
     ap.add_argument("--working-copy", action="store_true",
-                    help="also write <name>_working.kicad_pcb, for placing parts and planning: instead of its top silkscreen "
-                         "it has a thin dotted line through the connected holes and a thin circle around each drill on User.1 and the labels on User.2, and "
-                         "lines and arcs drawn on User.3 are wires of your own for the plan, and lines on User.4 chevrons to "
-                         "close; the plan button draws on User.5. "
-                         "Never order from it")
+                    help="also write <name>_working.kicad_pcb, for placing parts and planning: instead of its top "
+                         "silkscreen it has a thin dotted line through the connected holes and a thin circle around "
+                         "each drill on User.6 and the labels on User.7, and the plan button draws on User.5. Inner "
+                         "copper layers MCboard.Wires1 on and MCboard.Chevrons take tracks: those you draw are wires "
+                         "and closed chevrons of your own for the plan, and the apply button adds the rest. Never "
+                         "order from it")
     ap.add_argument("--wire-layers", type=int,
                     help="inner copper layers of the working copy for wires, MCboard.Wires1 on, such as one per "
-                         f"wire colour, up to {MAX_INNER_COPPER} (2). KiCad needs an even number of copper layers, so "
-                         "an odd number is raised to the next even one")
+                         f"wire colour, up to {MAX_INNER_COPPER - 1} (1). MCboard.Chevrons comes after them, and KiCad "
+                         "needs an even number of copper layers, so an even number is raised by one")
     ap.add_argument("--fab", choices=["jlcpcb", "pcbway", "generic", "none"], default="generic",
                     help="fab design rules to include (generic, which satisfies jlcpcb and pcbway)")
+    ap.add_argument("--kicad", choices=sorted(FORMAT_VERSIONS, key=int), default=KICAD_DEFAULT,
+                    help=f"the KiCad version whose file format to write ({KICAD_DEFAULT}). A newer KiCad opens the "
+                         "board of an older one, but not the other way round")
     args = ap.parse_args()
 
     # Fill in the defaults that depend on other options, and reject the impossible ones
@@ -168,13 +173,13 @@ def main():
     if args.wire_layers is not None and not args.working_copy:
         sys.exit("--wire-layers is for the working copy: add --working-copy.")
     if args.wire_layers is None:
-        args.wire_layers = 2
-    if not 1 <= args.wire_layers <= MAX_INNER_COPPER:
-        sys.exit(f"--wire-layers must be from 1 to {MAX_INNER_COPPER}.")
-    if args.wire_layers % 2:
+        args.wire_layers = 1
+    if not 1 <= args.wire_layers < MAX_INNER_COPPER:
+        sys.exit(f"--wire-layers must be from 1 to {MAX_INNER_COPPER - 1}.")
+    if (args.wire_layers + 1) % 2:  # the inner layers are the wire layers and MCboard.Chevrons
         args.wire_layers += 1
-        print(f"--wire-layers: KiCad needs an even number of copper layers, so the working copy has "
-              f"{args.wire_layers}.", file=sys.stderr)
+        print(f"--wire-layers: KiCad needs an even number of copper layers, and MCboard.Chevrons is one of them, "
+              f"so the working copy has {args.wire_layers} wire layers.", file=sys.stderr)
 
     if args.text is not None:
         args.text = args.text.strip()
@@ -221,6 +226,10 @@ def main():
     if board.mount_info:
         print(f"Mounting holes: {board.mount_info[0]}")
         for line in board.mount_report() + board.growth_report():
+            print(f"  {line}")
+    if board.layer_report():
+        print(LAYER_REPORT_TITLE)
+        for line in sum(board.layer_report(), []):
             print(f"  {line}")
     if board.name_placement:
         print(f'Name "{board.name()}": {board.name_placement[0]} margin.')

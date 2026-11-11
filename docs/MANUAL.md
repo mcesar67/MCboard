@@ -91,7 +91,9 @@ that side. After `Z` come `AA`, `AB` and so on.
 ## 1.1 Requirements
 
 - Python 3. The generator uses only the standard library.
-- KiCad 9 is not needed to generate a board, only to look at it, check it or edit it.
+- KiCad is not needed to generate a board, only to look at it, check it or edit it. The board is written in KiCad 10
+  format; for KiCad 9, add `--kicad 9`. KiCad 10 opens a KiCad 9 board as well, but not the other way round:
+  KiCad 9 opens neither a board in KiCad 10 format nor one saved by KiCad 10.
 
 Run the commands from the `protoboard_generator` folder. On Windows, use `python` or `py` instead of `python3` if that
 is the command you have.
@@ -129,7 +131,7 @@ For `-o folder/name`:
 
 | File | Contents |
 |---|---|
-| `name.kicad_pcb`, `.kicad_pro`, `.kicad_dru` | The KiCad project, in KiCad 9 format, with the fab's design rules. |
+| `name.kicad_pcb`, `.kicad_pro`, `.kicad_dru` | The KiCad project, in the format of `--kicad`, with the fab's design rules. |
 | `name_<w>x<h>_mm.zip` | What the fab needs: Gerbers, job file and drill files. `<w>x<h>` is the board size in whole mm, rounded up. |
 | `name.pdf` | A printable A4 drawing of both sides, with the command that made it at the foot of the page. |
 | `name_working.kicad_pcb` and its project | Only with `--working-copy`: the board prepared for placing parts, see [Part 2](#23-prepare-the-board). |
@@ -402,10 +404,11 @@ To choose a pattern for a part, count how many free holes each pin keeps: a stri
 | `--text` | Your own text on the top silkscreen. |
 | `--mount-*`, `--array-x`, `--array-y`, `--mount-spacing`, `--mount-drill`, `--no-mount-holes` | Mounting holes, see [1.8](#18-mounting-holes). |
 | `--fab` | Design rules, see [1.9](#19-fab-rules-and-dimensions). |
+| `--kicad 9\|10` | The KiCad version whose file format to write (10). |
 | `--pitch`, `--drill`, `--pad`, `--track`, `--bus`, `--gap`, `--chev-width`, `--chev-depth`, `--mask-margin`, `--margin`, `--margin-plain` | Dimensions. |
 | `--origin-x`, `--origin-y` | Where the board's corner sits on KiCad's drawing sheet (50, 50). |
 | `--working-copy` | Also write the working copy for planning, see [2.3](#23-prepare-the-board). |
-| `--wire-layers` | Inner copper layers for wires in the working copy, up to 30 (2), see [2.3](#23-prepare-the-board). |
+| `--wire-layers` | Inner copper layers for wires in the working copy, up to 29 (1), see [2.3](#23-prepare-the-board). |
 
 ---
 
@@ -420,20 +423,32 @@ net each pin belongs to, and works out:
 - which **wires to add** on the top side, where chevrons cannot reach;
 - what to **check**: pins off centre, nets that share a strip, strips with no way out.
 
-It gives a report and a PDF with both sides of the board marked. It never changes the copper, nets or footprints of
-the board.
+It gives a report and a PDF with both sides of the board marked. The plan itself never changes the copper, nets or
+footprints of the board.
 
 There are two ways to run it, with the same result:
 
 - the **MCboard plan** button in KiCad's PCB editor, which also draws the marks on the board;
 - `plan_board.py`, from the command line, on the saved file. KiCad is not needed for this.
 
+The plugin puts four buttons on the PCB editor's toolbar, in this order:
+
+| Button | Name | What it does | Changes the board |
+|---|---|---|---|
+| <img src="../protoboard_generator/kicad_plugin/nets_48.png" width="32" alt="MCboard nets"> | **MCboard nets** | For wiring by hand: after you draw chevrons and wires as tracks, it updates the nets so that the ratsnest shows only the connections still missing. It does not plan, so it is instant. See [2.5](#nets-of-what-is-drawn). | Nets only. |
+| <img src="../protoboard_generator/kicad_plugin/icon_48.png" width="32" alt="MCboard plan"> | **MCboard plan** | Works out the plan: report, PDF and marks on `MCboard.Plan`. See [2.5](#25-run-the-plan). | Marks only. |
+| <img src="../protoboard_generator/kicad_plugin/apply_48.png" width="32" alt="MCboard apply"> | **MCboard apply** | Plans, then puts the plan into the working copy's copper as locked tracks, so that the ratsnest follows it. See [2.5](#apply-the-plan). | Nets and locked tracks. |
+| <img src="../protoboard_generator/kicad_plugin/clear_48.png" width="32" alt="MCboard clear"> | **MCboard clear** | Takes back what plan and apply did: removes the locked tracks and the marks, and gives the strips their own nets. See [2.5](#clear-the-plan). | Nets, locked tracks and marks. |
+
+Each button is one step that **Edit > Undo** takes back, and none of them moves a part or touches the tracks you drew
+yourself, other than to give them a net. Every button shows its report in the same browser tab.
+
 The planner works only on boards made by `generate_protoboard.py`.
 
 ## 2.2 Requirements and installing the button
 
-- KiCad 9.0 or later, with its API turned on: **Preferences > Plugins > Enable KiCad API**. The button talks to the
-  PCB editor through that API.
+- KiCad 9.0 or later, with its API turned on: **Preferences > Plugins > Enable KiCad API**. The buttons talk to the
+  PCB editor through that API. They have been tried on KiCad 9 and 10, on Linux and Windows 11, but not on macOS.
 - On Linux, a Python 3 in the `PATH` that can make virtual environments (on Debian and Ubuntu, the `python3-venv`
   package). On Windows and macOS KiCad brings its own Python.
 - Python 3, to run the installer or `plan_board.py`. Nothing beyond the standard library.
@@ -460,8 +475,8 @@ python3 install_kicad_plugin.py --dir "C:\path\to\KiCad\9.0\plugins"
 `<version>` is the newest KiCad version with a folder there, such as `10.0`. To install for another, add `--version 9.0`.
 
 Then restart the PCB editor. The first time, KiCad makes a Python environment for the button and fetches the
-`kicad-python` package into it, which needs the internet and takes a minute. The button appears on the toolbar as
-**MCboard plan** when that is done.
+`kicad-python` package into it, which needs the internet and takes a minute. The buttons appear on the toolbar as
+**MCboard nets**, **MCboard plan**, **MCboard apply** and **MCboard clear** when that is done.
 
 **Update:** the plugin holds its own copy of the code, so run the installer again after updating MCboard. It replaces
 only its own folder. Restart the PCB editor.
@@ -481,17 +496,35 @@ only its own folder. Restart the PCB editor.
 
    | Layer | Contents |
    |---|---|
-   | `User.1`, `MCboard.Connections` | A thin dotted line through the holes of each strip and bus, in place of the board's bars or outlines, which would cover your parts, and a thin solid circle around every drill. |
-   | `User.2` | The board's labels, name and text. |
-   | `User.3`, `MCboard.ManualWires` | Wires you decide yourself, see [2.8](#28-decide-part-of-the-wiring-yourself). |
-   | `User.4`, `MCboard.ManualChevrons` | Chevrons you decide yourself. |
+   | `User.6`, `MCboard.Connections` | A thin dotted line through the holes of each strip and bus, in place of the board's bars or outlines, which would cover your parts, and a thin solid circle around every drill. |
+   | `User.7`, `MCboard.Labels` | The board's labels, name and text. |
    | `User.5`, `MCboard.Plan` | The button's marks. Draw nothing of your own here. |
-   | `In1.Cu` on, `MCboard.Wires1` on | Inner copper for wires: as many as `--wire-layers` asks, one per wire colour if you like. Nothing is drawn on them yet. |
+   | `In1.Cu` on, `MCboard.Wires1` on | Inner copper for wires: as many as `--wire-layers` asks, one per wire colour if you like. Tracks you draw here are wires you decide yourself, see [2.8](#28-decide-part-of-the-wiring-yourself); the **MCboard apply** button adds the planned ones, locked. |
+   | The last inner layer, `MCboard.Chevrons` | Tracks across chevrons: those you draw close chevrons you decide yourself, and the apply button adds the planned ones, locked. |
 
-   KiCad needs an even number of copper layers, so an odd `--wire-layers` is raised to the next even number, with a
-   message. These layers only exist in the working copy; the board you order has two copper layers. KiCad keeps layer
-   colours in its colour theme, not in the board, so to give each wire layer the colour of its wires, change them in
+   KiCad needs an even number of copper layers. The inner layers are the wire layers and `MCboard.Chevrons`, so an even
+   `--wire-layers` is raised by one, with a message; the default, 1, gives a working copy with four copper layers. These
+   layers only exist in the working copy; the board you order has two copper layers. KiCad keeps layer colours in its
+   colour theme, not in the board, so to give each wire layer the colour of its wires, change them in
    **Preferences > PCB Editor > Colors**.
+
+   The console and the PDF list these layers, each with KiCad's name and the working copy's:
+
+   ```text
+   Working copy layers, KiCad = MCboard:
+     In1.Cu = MCboard.Wires1
+     In2.Cu = MCboard.Chevrons
+     User.5 = MCboard.Plan
+     User.6 = MCboard.Connections
+     User.7 = MCboard.Labels
+   ```
+
+   With more than one wire layer, the first line is a range such as `In1.Cu to In3.Cu = MCboard.Wires1 to 3`.
+
+   The buttons take the inner layers by their place, not their name: every inner layer is a wire layer but the last,
+   which is `MCboard.Chevrons`. So the names may differ, for example after a rename by hand, and the report says so.
+   An inner layer with a name of its own, such as `GND`, is not a working copy's, and the buttons leave the inner
+   layers alone.
 
    KiCad's grid origin is set on hole A1. `plan_board.py` also takes a plain generated board, without those layers;
    the button needs `MCboard.Plan` for its marks.
@@ -506,7 +539,7 @@ To work in your own project's PCB instead of the working copy, see [2.9](#29-cha
 
 ## 2.4 Place the parts
 
-Turn off `User.1`, and keep `User.2` on for the row and column labels. Set a grid of 50 mil (or 5, 10 or 25 mil) and
+Turn off `User.6`, and keep `User.7` on for the row and column labels. Set a grid of 50 mil (or 5, 10 or 25 mil) and
 move each part so that its pins sit on the holes; with the grid origin on A1 they fall exactly on the hole centres.
 
 **Placement decides whether a plan exists at all.** The rules, for the default pattern:
@@ -528,13 +561,16 @@ with no pin on the grid is listed as not on the board, and left out of the plan.
 
 **With the button.** Press **MCboard plan**. It works on what the editor has now, so you need not save first. You get:
 
-- a window with the report, which can stay open while you work. Each press opens a new one;
+- the report in your browser, with a link to the PDF, and saved as `<board>_plan.html` next to the board. All the
+  buttons share one tab: while it is open, a press updates it instead of opening another;
 - `<board>_plan.pdf` next to the board, or in the temporary folder if the board has never been saved;
 - marks on the `MCboard.Plan` layer (`User.5`): a ring on each chevron to close and the path of each wire. Each run
-  replaces everything on that layer, as one step that **Edit > Undo** takes back.
+  replaces everything on that layer, as one step that **Edit > Undo** takes back. The chevrons and wires you drew
+  yourself as tracks get no mark, since the tracks already show them; the report and the PDF still list them.
 
-If the Python that runs the button has no tkinter, the report goes to `<board>_plan.txt` instead, opened in your text
-editor.
+When a button cannot do its work, for example on a board without that layer or while a tool is active, it changes
+nothing and says why on the report page.
+The other buttons write their reports as `<board>_apply.html`, `<board>_clear.html` and `<board>_nets.html`.
 
 The button needs the `MCboard.Plan` layer, which working copies have; KiCad's API cannot add a layer. On another
 generated board, enable `User.5` in **Board Setup > Board Layers** and name it `MCboard.Plan`. If `User.5` is already
@@ -542,6 +578,53 @@ used under another name, the button refuses the board rather than delete what is
 contents. The button never changes the layer's visibility; the report says when the layer is hidden.
 
 Move parts and press the button again as often as you like.
+
+<a id="apply-the-plan"></a>**Apply the plan.** Press **MCboard apply** to put the plan into the working copy, so that
+KiCad's ratsnest follows it. It plans the board as the plan button does, then:
+
+- gives every hole, chevron pad and island the net of the schematic that its strip carries, and the strips with no
+  pin of the schematic a net of their own, such as `C4_R1`;
+- draws each chevron to close as a track on `MCboard.Chevrons`, between the centres of its two holes;
+- draws each wire as tracks along its path on a `MCboard.Wires<n>` layer. The wires of one net share a layer, and the
+  nets take the layers in turn;
+- gives your own tracks on those layers, [2.8](#28-decide-part-of-the-wiring-yourself), the net of the holes they
+  join, and leaves them where they are.
+
+On `F.Cu` and `B.Cu` it changes only nets. The ratsnest then shows only what the plan could not do. Its report gives the
+counts and the nets that are not complete. It is one step that **Edit > Undo** takes back, and it leaves the marks of
+the plan button alone. It also writes `<board>_plan.pdf`, as the plan button does, so the drawing you print matches
+what was applied.
+
+The tracks it adds are locked, and that is how it knows them: each press first removes the locked tracks on the
+`MCboard.Wires<n>` and `MCboard.Chevrons` layers and keeps the unlocked ones, which are yours. To keep a planned track
+as your own, unlock it (right-click > **Unlock**); do not lock tracks of your own there.
+
+Press it again after changing the schematic, the parts or your own tracks: it removes what it added before and
+applies the new plan. After **Update PCB from Schematic**, press it again too, since KiCad does not know the strips.
+The plan button still works on an applied board and gives the same plan.
+
+It refuses a plan with errors, so fix them first, and a board without inner copper layers: working copies made with
+`--working-copy` have them, and KiCad's API cannot add them. Apply only changes the working copy; the board you order
+still comes from the generator's zip.
+
+<a id="clear-the-plan"></a>**Clear the plan.** Press **MCboard clear** to take the working copy back to before the
+plan and apply buttons, in one step that **Edit > Undo** takes back. It removes the locked tracks on the
+`MCboard.Wires<n>` and `MCboard.Chevrons` layers and the marks on `MCboard.Plan`, gives every hole, chevron pad and
+island its strip's own net again, and gives your own tracks the net of the hole at one of their ends, as the router
+does. Your own tracks and the parts stay where they are. It does not plan: press the plan and apply buttons again
+after it. Global deletions in KiCad are not a way to do this, since they can take more than the layer chosen.
+
+<a id="nets-of-what-is-drawn"></a>**Update the nets while wiring by hand.** When you decide the wiring yourself,
+[2.8](#28-decide-part-of-the-wiring-yourself), you draw each chevron to close and each wire as a track on
+`MCboard.Chevrons` or `MCboard.Wires<n>`. KiCad does not know that such a track joins two strips, so its ratsnest
+does not change. Press **MCboard nets** after drawing some: it gives every strip the net of the pins on it, and the
+strips your tracks join the same net. The ratsnest then shows only the connections still missing, and the report
+lists the nets still in pieces.
+
+It does not plan: it only reads what is drawn, so it takes a fraction of a second and can be pressed after every few
+tracks. The locked tracks of an earlier apply count like yours and stay. It writes no PDF and leaves the marks of the
+plan button alone. It is one step that **Edit > Undo** takes back, and, as apply does, it refuses tracks that join two
+nets.
 
 **From the command line.** Save the board, then:
 
@@ -588,8 +671,8 @@ so column 1 is on the right there. The report follows on the next pages. A board
 
 | Mark | Meaning |
 |---|---|
-| Red | Chevrons to close |
-| Blue | Wires to add, on the top side |
+| Magenta | Chevrons to close; dashed, those on the other side |
+| Black, brown, red, green, blue, violet, grey | Wires to add, on both sides: the colour of the `MCboard.Wires<n>` layer they are on, in that order, listed in the legend before the report. On a board with no wire layers, a colour per net |
 | Green | Parts, on the top side only |
 | Black dots | Holes with a pin |
 
@@ -599,21 +682,36 @@ Close the chevrons that will be under a part before fitting it: once the part is
 
 ## 2.8 Decide part of the wiring yourself
 
-Draw what you want to decide, and the plan takes it as given and completes the rest. Use **Place > Draw Lines** with a
-grid of 50 mil, from hole centre to hole centre. The working copy has two layers for this, `User.3` for wires and
-`User.4` for chevrons; on any other board, enable both in **Board Setup > Board Layers**. If they show in the same
-colour, change one in the **Appearance** panel. The working copy draws lines 0.3 mm wide so that they stand out; elsewhere,
-set **Board Setup > Text & Graphics Defaults > Other Layers**. The width does not matter to the plan.
+Draw what you want to decide as tracks, and the plan takes it as given and completes the rest. Pick the layer in the
+**Layers** panel, then use **Route > Route Single Track** with a grid of 50 mil, from hole centre to hole centre: on a
+`MCboard.Wires<n>` layer for a wire, on `MCboard.Chevrons` for a chevron. The track width does not matter to the plan.
+The router takes the width of the project's `Default` net class: 0.3 mm in the working copy's project, and whatever
+your own project says. The apply button draws its tracks as wide as that, read from the `.kicad_pro` beside the
+board, so save the project after changing the net class; with no such file it uses 0.3 mm. To draw yours another
+width, pick one in the track width list before you draw, or change the drawn tracks' width in **Properties**. If they
+come out 1 mm wide, turn off **Auto track width**, the button beside that list: with it on, the router copies the
+width of the strip on `F.Cu` that the hole is on.
 
-- **On `User.4`, a straight line between two holes with a chevron between them closes that chevron**: the bottom one, on a
-  board that also has one on top. Any other line there is an error.
-- **On `User.3`, every line is a wire**, even one across a chevron, and it may be diagonal. Its two ends connect, and they
-  must be on holes.
-- **Lines that meet sharply on a hole are separate wires, each soldered to that pad.** So two or more wires can go to one
-  pad. A wire of the plan never ends on a pad where another wire ends.
-- **A rounded corner connects to nothing.** To make one wire pass over a pad, round the corner: select both lines, then
-  right-click > **Shape Modification > Fillet Lines**, or use **Place > Draw Arc**. A radius of 1 mm is plenty.
+In the working copy a hole has no pad on the inner layers but where a track ends on it, so that your wires and
+chevrons stand out and the router can pass between holes. These layers come with the working copy; on any other generated board, add inner copper layers in **Board Setup >
+Board Layers** and give them those names.
+
+Until the plan is applied, the holes of each strip have a net of their own, so the router may refuse to end a track on
+the hole of another strip, or to pass close to other holes. In **Route > Interactive Router Settings**, set **Mode** to
+**Highlight collisions** and tick **Allow DRC violations**. DRC reports those tracks as shorts until the apply button
+gives them the net they join.
+
+- **On `MCboard.Chevrons`, a straight track between two holes with a chevron between them closes that chevron**: the
+  bottom one, on a board that also has one on top. Any other track there is an error, and an arc is left out.
+- **On a wire layer, every track is part of a wire**, even one across a chevron, and it may be diagonal. Its two ends
+  connect, and they must be on holes. Tracks on different wire layers never join: each wire is on one layer.
+- **Tracks that meet sharply on a hole are separate wires, each soldered to that pad.** So two or more wires can go to
+  one pad. A wire of the plan never ends on a pad where another wire ends.
+- **A rounded corner connects to nothing.** To make one wire pass over a pad, round the corner with an arc track: the
+  router draws rounded corners when its corner style is set to arcs.
 - **A sharp corner between holes is also a corner of the wire**, since it cannot be taken for a connection.
+- **Leave your tracks unlocked.** Locked tracks on those layers are the apply button's, and the next apply removes
+  them.
 
 The report lists them like the others, tagged `manual`:
 
@@ -623,9 +721,9 @@ The report lists them like the others, tagged `manual`:
 ```
 
 The plan does not move or remove them, and does not check that a wire of yours can be fitted. It tells you under
-**Check** when one runs under a part or ends on a hole with a pin, which may be what you want. Lines that join two nets
-are an error and are all left out. Lines on strips with no net keep the plan off those strips. Delete a line and run the
-plan again to undo it.
+**Check** when one runs under a part or ends on a hole with a pin, which may be what you want. Tracks that join two
+nets are an error and are all left out. Tracks on strips with no net keep the plan off those strips. Delete a track and
+run the plan again to undo it.
 
 ## 2.9 Change the board under a circuit
 
@@ -634,9 +732,24 @@ swap the board under a circuit, for instance to plan on a large board and then m
 
 1. Open the project's PCB and use **File > Append Board** to add a working copy. Place it with hole A1 where you want
    it. The project keeps its own grid origin, so set it on A1: **Place > Grid Origin**, then click the centre of that hole.
-2. Place the parts, draw your own lines and plan as above.
+   Layers the project already has keep the project's names, and the ones it lacks take the working copy's, whether or
+   not the import dialog is told to keep KiCad's names (seen in KiCad 10.0.8). A new KiCad board has `User.1` to
+   `User.4` only, and the working copy's user layers start at `User.5`, so in most projects they all arrive with the
+   working copy's names. If yours had any of them already, check the names in **File > Board Setup > Board Editor
+   Layers**:
+
+   - `User.5` must be named `MCboard.Plan`, or the buttons refuse the board.
+   - The others are only labels, but renaming them as the working copy has them is worth it: the plan's messages, this
+     manual and the generator's list of layers (see [2.3](#23-prepare-the-board)) use those names, and an inner layer
+     with another `MCboard` name gives a warning on every run. They are `User.6` `MCboard.Connections`, `User.7`
+     `MCboard.Labels`, then from `In1.Cu` on `MCboard.Wires1`, `MCboard.Wires2` and so on, and on the last inner layer
+     `MCboard.Chevrons`.
+   - An inner layer with a name of its own, such as a ground plane's `GND`, means the project's inner layers are not
+     a working copy's, and the buttons leave them alone.
+2. Place the parts, draw your own tracks and plan as above.
 3. To change the board, for another size or pattern, click any hole to select the group and press **Delete**. Say yes
-   if KiCad asks about locked items. The parts and your lines on `User.3` and `User.4` stay.
+   if KiCad asks about locked items. The parts and the tracks on the `MCboard.Wires<n>` and `MCboard.Chevrons` layers
+   stay; the new working copy must have the same layers.
 4. Append the new working copy and put its hole A1 exactly where the old one was. A1 is not in the same place on every
    board: it moves with the size and the mounting holes. The pads hide the origin's cross, so go by the coordinates:
    - In **Preferences > PCB Editor > Origins & Axes**, set **Display origin** to **Grid origin**. The status bar then
@@ -658,18 +771,20 @@ Order the board from the zip of the board you settled on, never from the project
 | Message | What it means | What to do |
 |---|---|---|
 | `Short: R1.2 (VCC, hole D8) and R2.2 (DIS, hole F8) are joined by the copper of strip D8 to F8.` | Two nets have pins on the same strip. | Move one of the parts. |
-| `TRIG cannot reach strip D5 to F5 (R2.1, U1.6): no path through chevrons and wires clear of the parts.` | Usually the placement, not the search: a strip of the net has no way out, because its holes all have a pin or are under a part, or the way is taken. A second line names the strip when it is shut in, which may be another strip of the net and not the one in this message. | Move the part, for example so that a chip straddles a bus. If the strip has a hole under the part, you can instead [draw a wire](#28-decide-part-of-the-wiring-yourself) from it on `MCboard.ManualWires` (`User.3`). |
+| `TRIG cannot reach strip D5 to F5 (R2.1, U1.6): no path through chevrons and wires clear of the parts.` | Usually the placement, not the search: a strip of the net has no way out, because its holes all have a pin or are under a part, or the way is taken. A second line names the strip when it is shut in, which may be another strip of the net and not the one in this message. | Move the part, for example so that a chip straddles a bus. If the strip has a hole under the part, you can instead [draw a wire](#28-decide-part-of-the-wiring-yourself) from it as a track on `MCboard.Wires1`. |
 | `Not on the board, so not in this plan: C1, J1, ...` | Those parts have no pin on the hole grid. | Place them. |
 | `J2.1 is 0.16 mm off the centre of hole J6.` | The pin counts as in the hole, but is not centred. | Move the part, or set the grid origin on A1. |
-| `Manual lines join DIS and GND: D1 to C4. They are left out.` | Your lines join two nets, directly or through other lines. None of them is used. | Delete or move the wrong one. |
+| `Manual tracks join DIS and GND: D1 to C4. They are left out.` | Your tracks join two nets, directly or through other tracks. None of them is used. | Delete or move the wrong one. |
 | `Manual wire F1 to F10 (GND) runs under U1: check that it can be fitted.` | One of your wires crosses that part's courtyard. | Keep it if it fits under the part, or route it elsewhere. |
 | `Manual wire J1 to J4 (TRIG) ends on hole J4, which holds pin C1.1.` | The wire and the pin share that hole. | Keep it if both fit. Otherwise end the wire on another hole of the strip. |
 | `Manual wires D4 to D10, D8 to D10 (DIS) end on hole D10: check that they fit in it together.` | Two or more of your wires end on that pad. | Keep them if they fit. Otherwise end one on another hole of the strip. |
-| `Manual lines A11 to C13 join no net, so the plan keeps off their strips.` | No pin with a net is on those strips. | Delete the lines if you do not need them. They can block another net. |
-| `A manual line ends 0.60 mm from the nearest hole, A11. It is left out.` | An end of a wire is not on a hole (up to 0.25 mm counts), or two lines of a wire do not quite meet. | Draw it again on the 50 mil grid. |
-| `Manual lines through D9, near A11, near C11, A13 are not one wire with two ends. They are left out.` | Three or more lines meet at a corner, or they close a loop. | Make them meet sharply on a hole, where each is a wire of its own. |
-| `The line on MCboard.ManualChevrons (User.4) from C4 to C5 is not across one chevron. It is left out.` | A line on the chevron layer must join two holes with a chevron between them. | Move it, or draw it on `User.3` if it is a wire. |
-| `The manual wire C5 to D5 is across chevron C5-D5. To close the chevron instead, draw the line on MCboard.ManualChevrons (User.4).` | A straight wire of yours joins the two holes of a chevron. | Keep it if you want a wire there. Otherwise move the line to `User.4`. |
+| `Manual tracks A11 to C13 join no net, so the plan keeps off their strips.` | No pin with a net is on those strips. | Delete the tracks if you do not need them. They can block another net. |
+| `A manual wire track ends 0.60 mm from the nearest hole, A11. It is left out.` | An end of a wire is not on a hole (up to 0.25 mm counts), or two tracks of a wire do not quite meet. | Draw it again on the 50 mil grid. |
+| `Manual wire tracks through D9, near A11, near C11, A13 are not one wire with two ends. They are left out.` | Three or more tracks meet at a corner, or they close a loop. | Make them meet sharply on a hole, where each is a wire of its own. |
+| `The track on MCboard.Chevrons from C4 to C5 is not across one chevron. It is left out.` | A track on the chevron layer must join two holes with a chevron between them. | Move it, or draw it on a wire layer if it is a wire. |
+| `The manual wire C5 to D5 is across chevron C5-D5. To close the chevron instead, draw the track on MCboard.Chevrons.` | A straight wire of yours joins the two holes of a chevron. | Keep it if you want a wire there. Otherwise move the track to `MCboard.Chevrons`. |
+| `In2.Cu is named MCboard.Wires2 on this board. MCboard takes the inner layers by position, so it is MCboard.Chevrons.` | The layer has another name than in a working copy, for example one kept from an older working copy. | Nothing, or rename the layer in **Board Setup > Board Editor Layers** so that its name says what it is. |
+| `Inner layers with names of their own: In1.Cu (GND). A working copy's inner layers are for MCboard alone, so this board's are left out and the plan cannot be applied.` | An inner layer is named as no working copy's is, so it may hold copper of your own. The plan leaves out every track on the inner layers, and apply refuses the board. | Plan on a working copy, whose inner layers are only for MCboard. |
 
 ## 2.11 Limits
 
@@ -681,12 +796,18 @@ Order the board from the zip of the board you settled on, never from the project
 
 ## 2.12 Troubleshooting
 
-- **The button does not appear.** Check that the API is on, in **Preferences > Plugins**, and that `mcboard_plan` is in
+- **The buttons do not appear.** Check that the API is on, in **Preferences > Plugins**, and that `mcboard_plan` is in
   the `plugins` folder of the KiCad version you run; if the installer's default is not that folder, install with
   `--dir`. Then restart KiCad. If it still does not show, the button's Python environment may have failed to build, for
   example with no internet or, on Linux, no `python3-venv`: in the PCB editor's preferences, in the list of plugin
   buttons, right-click it and choose **Recreate Plugin Environment**.
+- **"KiCad is busy".** A tool other than selection is active, such as the router you used for a track of your own. KiCad
+  answers no plugin while one is. Press Esc until the selection arrow is back, then press the button again.
 - **"it has no MCboard.Plan layer".** See [2.5](#25-run-the-plan).
+- **"The plan cannot be applied".** The plan has errors, which the report lists, or the board has no inner copper layers. See
+  [Apply the plan](#apply-the-plan).
+- **The ratsnest still shows lines after applying.** Those are the nets the plan could not complete, which the apply
+  report lists. If it shows more, the schematic or the parts changed since: press **MCboard apply** again.
 - **"This board cannot be used".** The board was not made by the generator, or its holes are missing.
 - **Pins stay 0.05 to 0.08 mm off every hole.** KiCad's grid origin is not on hole A1. Set it on the centre of A1 with
   **Place > Grid Origin**, then move the parts again.

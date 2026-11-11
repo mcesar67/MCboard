@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Every dimension and fab limit that is not a command line option. All in mm unless stated otherwise."""
 
-FORMAT_VERSION = "20241229"  # KiCad 9
+# The .kicad_pcb format of each KiCad version that --kicad takes: (version, generator_version)
+FORMAT_VERSIONS = {"9": ("20241229", "9.0"), "10": ("20260206", "10.0")}
+KICAD_DEFAULT = "10"
 
 # Custom rules file per fab (2-layer, 1 oz copper variant)
 FAB_RULES = {
@@ -80,19 +82,27 @@ JOB_STACKUP = [
 BOARD_THICKNESS = 1.6
 # The top silkscreen of the board in a --working-copy, kept apart from that of the parts placed on it.
 # KiCad can only show or hide whole layers, and footprints bring their silkscreen to F.SilkS.
-WORKING_CONNECTIONS_LAYER = ("User.1", "MCboard.Connections")  # a dotted line through the holes of each strip and bus, and the drills
+# From User.5 on, because a new KiCad 10 board has User.1 to User.4 already, and File > Append Board keeps the open
+# board's names for the layers it has: layers it lacks arrive with these names.
+# a dotted line through the holes of each strip and bus, and the drills
+WORKING_CONNECTIONS_LAYER = ("User.6", "MCboard.Connections")
 WORKING_CONNECTION_WIDTH = 0.05  # thinner than MANUAL_LINE_WIDTH, so that wires stand out over it
-WORKING_LABELS_LAYER = ("User.2", "MCboard.Labels")            # rows, columns, name and --text
+WORKING_LABELS_LAYER = ("User.7", "MCboard.Labels")          # rows, columns, name and --text
 WORKING_SILK_LAYERS = (WORKING_CONNECTIONS_LAYER[0], WORKING_LABELS_LAYER[0])
-MANUAL_WIRE_LAYER = ("User.3", "MCboard.ManualWires")        # wires drawn by hand for the plan
-MANUAL_CHEVRON_LAYER = ("User.4", "MCboard.ManualChevrons")  # chevrons marked by hand as closed
 PLAN_MARKS_LAYER = ("User.5", "MCboard.Plan")             # the plan button's marks, cleared on each run
-MANUAL_LINE_WIDTH = 0.3    # default width of lines drawn on those, and on the other user layers
-# Inner copper layers of a working copy, for wires as tracks, named 1 on from the first inner layer after the
-# board's own copper. KiCad numbers inner layers from In1 with no gaps, only up to In30, and loads no file with
-# an odd number of copper layers, so an odd --wire-layers is raised by one.
+USER_LAYERS = (PLAN_MARKS_LAYER, WORKING_CONNECTIONS_LAYER, WORKING_LABELS_LAYER)  # the working copy's own
+USER_LAYER_NUMBERS = {"User.5": 47, "User.6": 49, "User.7": 51}  # KiCad's numbers for them in the file
+LAYER_REPORT_TITLE = "Working copy layers, KiCad = MCboard:"   # heads the list in the console and the PDF
+MANUAL_LINE_WIDTH = 0.3    # default width of lines drawn on the user layers
+# Inner copper layers of a working copy: --wire-layers for wires, named 1 on from the first inner layer after the
+# board's own copper, then one for closed chevrons. Tracks the user draws on them are the manual part of a plan;
+# the apply button adds its own, locked. KiCad numbers inner layers from In1 with no gaps, only up to In30, and
+# loads no file with an odd number of copper layers, so --wire-layers is raised by one when the total is odd.
 WIRE_LAYER_NAME = "MCboard.Wires{}"
+CHEVRON_LAYER_NAME = "MCboard.Chevrons"
 MAX_INNER_COPPER = 30
+APPLY_CHEVRON_TRACK = 0.3  # width of the track that stands for a closed chevron, once a plan is applied
+APPLY_WIRE_TRACK = 0.3     # and of those that stand for a wire
 
 PROJECT_CLEARANCE = 0.2    # the Default net class clearance in the .kicad_pro
 
@@ -109,6 +119,15 @@ PDF_CAPTION_ASCENT = 0.72  # top of Helvetica capitals above the baseline, as a 
 PDF_NOTE_SIZE = 2.8        # height of the mounting hole notes on paper, in mm (8 pt)
 PDF_NOTE_LEADING = 3.6     # distance between the lines of those notes on paper, in mm
 PDF_NOTE_DESCENT = 0.21    # Helvetica descenders below the baseline, as a fraction of its size
+PDF_NOTE_EDGE = 5.0        # closest the notes come to the page edge, outside what printers cannot reach
+# Helvetica advance widths of the ASCII characters from space on, in thousandths of the size, from its AFM
+PDF_HELVETICA_WIDTHS = (
+    278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+    556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+    1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+    667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+    333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+    556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584)
 PDF_COMMAND_SIZE = 2.1     # the command line at the foot of the page, in Courier, on paper in mm (6 pt)
 PDF_COMMAND_LEADING = 2.6
 PDF_COMMAND_ASCENT = 0.63  # top of Courier capitals above the baseline, as a fraction of its size
@@ -117,7 +136,7 @@ PDF_COMMAND_BOTTOM = 4.0   # bottom of the page to the baseline of its last line
 PDF_COMMAND_LINES = 3      # what fits in the bottom margin; a longer command is cut short with ...
 PDF_LOCKED_TRIES = 9       # names tried when a PDF is open in a viewer that locks it: <name>.pdf, then -2 to -9
 
-# Working out a plan for a placed board (planner.py)
+# Working out a plan for a placed board (planner.py, manual.py)
 PLAN_PIN_TOLERANCE = 0.25  # most a through-hole pin may be off a hole; a lead bends this much
 PLAN_PIN_EXACT = 0.05      # beyond this, the report says that the pin is slightly off
 PLAN_SMD_REACH = 1.5       # most an SMD pad may be from its nearest hole: half a pitch, plus a little
@@ -131,11 +150,16 @@ PLAN_SHARED_HOLE_COST = 1.0  # for each pitch two wires run along together: poss
 PLAN_EXTRA_BEND_COST = 0.5  # for each bend after the first, on a wire that has to go round parts
 PLAN_MAX_ATTEMPTS = 300    # orders in which to try the nets
 PLAN_MAX_STEPS = 2000000
-PLAN_MANUAL_MEET = 0.02    # manual lines whose ends are this close meet there
+PLAN_MANUAL_MEET = 0.02    # manual tracks whose ends are this close meet there
 
 # The marks on the plan's PDF, in board mm
-PLAN_MARK_RGB = (0.85, 0.0, 0.0)    # chevrons to close
-PLAN_WIRE_RGB = (0.0, 0.2, 0.85)    # wires to add
+PLAN_MARK_RGB = (0.85, 0.0, 0.75)   # chevrons to close: magenta, as red is a wire colour
+# Wires to add: the colour of MCboard.Wires<n> is the n-th, in turn, in the order of Dupont jumper colours. Orange
+# and yellow are left out, as they hardly show on the copper and on white; brown is dark for the same reason.
+PLAN_WIRE_COLOURS = (("black", (0.0, 0.0, 0.0)), ("brown", (0.35, 0.15, 0.0)), ("red", (0.85, 0.0, 0.0)),
+                     ("green", (0.0, 0.6, 0.0)), ("blue", (0.0, 0.2, 0.85)), ("violet", (0.45, 0.0, 0.75)),
+                     ("grey", (0.5, 0.5, 0.5)))
+PLAN_OTHER_SIDE_DASH = (0.4, 0.3)   # on and off, for the marks of a chevron on the other side
 PLAN_PART_RGB = (0.0, 0.45, 0.2)    # outlines and names of the parts
 PLAN_RING_RADIUS = 1.0              # around a chevron to close
 PLAN_RING_LINE = 0.2

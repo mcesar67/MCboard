@@ -8,7 +8,8 @@ from pathlib import Path
 
 from .kicad_file import NotAPlacedBoard, read_board
 from .plan_pdf import write_plan_pdf
-from .planner import report, solve
+from .plan import report
+from .planner import solve
 
 
 def main():

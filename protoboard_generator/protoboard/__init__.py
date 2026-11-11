@@ -19,10 +19,15 @@ The planner uses pdf, font, constants and the row names of pattern, and nothing 
 
   plan_cli       the command line
   kicad_file     reads a .kicad_pcb into a PlacedBoard, with no KiCad involved
-  planner        pins to strips, then which chevrons to close and which wires to add
+  plan           what a plan is made of (Plan, Route, Wire), and its report as text
+  manual         the chevrons and wires the user drew as tracks, taken into the plan
+  planner        pins to strips, then which chevrons to close and which wires to add: solve()
   plan_pdf       the drawing with the marks, and the report as text pages
+  apply          what the apply, nets and clear buttons change in the copper, worked out from a plan
 
-../kicad_plugin/plan_action.py is the button in KiCad: a thin layer over those, and the only code using KiCad's API.
+../kicad_plugin/ holds the four buttons in KiCad, a thin layer over those and the only code using KiCad's API:
+button.py is what they share, and nets_action.py, plan_action.py, apply_action.py and clear_action.py are one each.
+report_server.py shows their reports in one browser tab.
 
 The flow is short:
 

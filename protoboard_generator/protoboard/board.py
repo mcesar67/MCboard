@@ -16,11 +16,12 @@ import re
 import sys
 import uuid
 
-from .constants import (FORMAT_VERSION, GERBER_LAYERS, ISLAND_SIDE, ISLAND_TIE, ISLAND_TIE_INTO_PAD,
+from .constants import (FORMAT_VERSIONS, GERBER_LAYERS, ISLAND_SIDE, ISLAND_TIE, ISLAND_TIE_INTO_PAD,
                         LABEL_CHAR_WIDTH, LABEL_GAP, LABEL_THICKNESS, LABEL_TO_EDGE,
                         MOUNT_TO_EDGE, MOUNT_TO_LABEL, NAME_GAP, NAME_GAP_TOP, NAME_TO_EDGE, SILK_BAR_SLACK,
-                        MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, PLAN_MARKS_LAYER, SILK_BAR_STEPS, SILK_TO_PAD, SOLDER_MASK_MIN_WEB, WORKING_CONNECTION_WIDTH,
-                        WIRE_LAYER_NAME, WORKING_CONNECTIONS_LAYER, WORKING_LABELS_LAYER)
+                        CHEVRON_LAYER_NAME, SILK_BAR_STEPS, SILK_TO_PAD, SOLDER_MASK_MIN_WEB, USER_LAYER_NUMBERS,
+                        USER_LAYERS, WORKING_CONNECTION_WIDTH, WIRE_LAYER_NAME, WORKING_CONNECTIONS_LAYER,
+                        WORKING_LABELS_LAYER)
 from .font import text_extent, text_strokes, text_width
 from .mounting import SideSpec, corner_strip, holes_that_fit, mount_min_distance, placed, side_strip, widest_spacing
 from .pattern import RowPattern
@@ -146,6 +147,15 @@ class Board:
             return self.net(f"BUS_R{index[row] + 1}")
         return self.net(f"C{col + 1}_R{index[self.pattern.start[row]] + 1}")
 
+    def net_text(self, col, row, track=False):
+        """The net of a hole's strip as a pad or track gives it. KiCad 9 refers to the table of nets at the top of
+        the file, by number and name for a pad and by number only for a track; KiCad 10 has no table and uses the
+        name."""
+        number, name = self.net_of(col, row)
+        if self.args.kicad != "9":
+            return f'(net "{name}")'
+        return f"(net {number})" if track else f'(net {number} "{name}")'
+
     def name(self):
         """Return the name printed on the board."""
         return f"MCboard {self.args.cols}x{self.args.rows}"
@@ -162,7 +172,7 @@ class Board:
     def hole(self, col, row, ref):
         """Draw one plated hole, with its pad and mask opening on both sides."""
         a = self.args
-        net_id, net_name = self.net_of(col, row)
+        net = self.net_text(col, row)
         centre = (self.x(col), self.y(row))
         self.pth.append(centre)
         self.art["F.Cu"].append(("flash", *centre, a.pad))
@@ -178,7 +188,7 @@ class Board:
             f'    (property "Value" "hole" (at 0 0 0) (layer "F.Fab") (hide yes)\n'
             f"      (effects (font (size 0.4 0.4) (thickness 0.06))) (uuid \"{new_uuid()}\"))\n"
             f'    (pad "1" thru_hole circle (at 0 0) (size {fmt(a.pad)} {fmt(a.pad)}) (drill {fmt(a.drill)})'
-            f' (layers "*.Cu" "*.Mask") (net {net_id} "{net_name}") (uuid "{new_uuid()}"))\n'
+            f' (layers "*.Cu" "*.Mask") {net} (uuid "{new_uuid()}"))\n'
             f"  )"
         )
 
@@ -253,8 +263,7 @@ class Board:
         to the second. side is "B" or "F", the copper and mask layers it goes on."""
         a = self.args
         upper, lower, y_top, mid, gap_v = self.chevron_geometry()
-        net1, name1 = self.net_of(col, row)
-        net2, name2 = self.net_of(to_col, to_row)
+        net1, net2 = self.net_text(col, row), self.net_text(to_col, to_row)
         copper, mask_layer = f"{side}.Cu", f"{side}.Mask"
         # chevron_geometry() draws it pointing down; this turns it to the direction asked for.
         vx, vy = to_col - col, to_row - row
@@ -303,11 +312,11 @@ class Board:
             f"    (fp_poly (pts {mask_pts}) (stroke (width 0) (type solid)) (fill yes)"
             f' (layer "{mask_layer}") (uuid "{new_uuid()}"))\n'
             f'    (pad "1" smd custom (at {fmt(anchor1[0])} {fmt(anchor1[1])}) (size {anchor_size} {anchor_size})'
-            f' (layers "{copper}" "{mask_layer}") (net {net1} "{name1}")\n'
+            f' (layers "{copper}" "{mask_layer}") {net1}\n'
             f"      (options (clearance outline) (anchor circle))\n"
             f"      (primitives {poly(upper, anchor1)}) (uuid \"{new_uuid()}\"))\n"
             f'    (pad "2" smd custom (at {fmt(anchor2[0])} {fmt(anchor2[1])}) (size {anchor_size} {anchor_size})'
-            f' (layers "{copper}" "{mask_layer}") (net {net2} "{name2}")\n'
+            f' (layers "{copper}" "{mask_layer}") {net2}\n'
             f"      (options (clearance outline) (anchor circle))\n"
             f"      (primitives {poly(lower, anchor2)}) (uuid \"{new_uuid()}\"))\n"
             f"  )"
@@ -360,7 +369,7 @@ class Board:
         The tie goes left on even columns and right on odd ones, down on odd rows and up on even ones."""
         a = self.args
         tied = (col + col % 2, row + row % 2)
-        net_id, net_name = self.net_of(*tied)
+        net, tie_net = self.net_text(*tied), self.net_text(*tied, track=True)
         x, y = self.x(col) + a.pitch / 2, self.y(row) + a.pitch / 2
         hole_x, hole_y = self.x(tied[0]), self.y(tied[1])
         to_hole = math.hypot(hole_x - x, hole_y - y)
@@ -383,12 +392,12 @@ class Board:
             f'    (property "Value" "island" (at 0 0 0) (layer "F.Fab") (hide yes)\n'
             f"      (effects (font (size 0.4 0.4) (thickness 0.06))) (uuid \"{new_uuid()}\"))\n"
             f'    (pad "1" smd rect (at 0 0) (size {fmt(ISLAND_SIDE)} {fmt(ISLAND_SIDE)})'
-            f' (layers "F.Cu" "F.Mask") (net {net_id} "{net_name}") (uuid "{new_uuid()}"))\n'
+            f' (layers "F.Cu" "F.Mask") {net} (uuid "{new_uuid()}"))\n'
             f"  )"
         )
         self.items.append(
             f"  (segment (start {fmt(x)} {fmt(y)}) (end {fmt(end[0])} {fmt(end[1])}) (width {fmt(ISLAND_TIE)})"
-            f' (layer "F.Cu") (net {net_id}) (uuid "{new_uuid()}"))'
+            f' (layer "F.Cu") {tie_net} (uuid "{new_uuid()}"))'
         )
 
     def islands(self):
@@ -407,11 +416,11 @@ class Board:
 
     def segment(self, x1, y1, x2, y2, width, col, row):
         """Draw a copper track on B.Cu, in the net of the given hole."""
-        net_id, _ = self.net_of(col, row)
+        net = self.net_text(col, row, track=True)
         self.art["B.Cu"].append(("line", x1, y1, x2, y2, width))
         self.items.append(
             f"  (segment (start {fmt(x1)} {fmt(y1)}) (end {fmt(x2)} {fmt(y2)}) (width {fmt(width)})"
-            f' (layer "B.Cu") (net {net_id}) (uuid "{new_uuid()}"))'
+            f' (layer "B.Cu") {net} (uuid "{new_uuid()}"))'
         )
 
     # ---------- top silkscreen ----------
@@ -781,7 +790,8 @@ class Board:
                                  + (f"centres {spacing:g} mm apart, " if holes > 1 else "")
                                  + (f"at the {align} corner, " if align and align != "centre" else "")
                                  + (f"strips {distance:.2f} mm apart" if same else
-                                    f"{distance:.2f} mm from the {other} strip" if strips[other][1] else f"no holes on the {other}")
+                                    f"{distance:.2f} mm from the {other} strip" if strips[other][1] else
+                                    f"no holes on the {other}")
                                  + (f", {left_out} left out next to other holes" if left_out else ""))
         return lines
 
@@ -948,7 +958,8 @@ class Board:
         """Return the items for a working copy. The board's top text moves to its own layer. Its connection marks
         would cover the parts, so a thin line through the holes of each strip and bus takes their place, whatever
         --silk says, with a circle of the same width around every drill, so that the holes still show under a part
-        whose body hides the pads. None of this is in self.art: it is never fabricated."""
+        whose body hides the pads. The holes' pads leave out the inner layers where no track ends. None of this is
+        in self.art: it is never fabricated."""
         a = self.args
         moved = []
         for item in self.items:
@@ -956,6 +967,11 @@ class Board:
                 if not item.startswith("  (gr_text"):
                     continue
                 item = item.replace('(layer "F.SilkS")', f'(layer "{WORKING_LABELS_LAYER[0]}")', 1)
+            elif item.startswith('  (footprint "Hole"'):
+                # No pad on the inner layers but where a track ends: the wires and chevrons drawn there then show
+                # clearly, and the router can pass between holes. A track still connects to the plated hole.
+                item = item.replace('(layers "*.Cu" "*.Mask")',
+                                    '(layers "*.Cu" "*.Mask") (remove_unused_layers yes) (keep_end_layers yes)', 1)
             moved.append(item)
         for x1, y1, x2, y2 in self.connection_runs():
             if (x1, y1) != (x2, y2):
@@ -976,14 +992,14 @@ class Board:
         The working copy is the same board for placing parts on, not for ordering: see working_items().
         """
         a = self.args
-        extra_layers = "".join(f'    ({number} "{name}" user "{label}")\n' for number, (name, label) in
-                               ((39, WORKING_CONNECTIONS_LAYER), (41, WORKING_LABELS_LAYER),
-                                (43, MANUAL_WIRE_LAYER), (45, MANUAL_CHEVRON_LAYER),
-                                (47, PLAN_MARKS_LAYER))) if working else ""
-        nets = "\n".join(f'  (net {n} "{name}")' for name, n in self.nets.items())
+        extra_layers = "".join(f'    ({USER_LAYER_NUMBERS[name]} "{name}" user "{label}")\n'
+                               for name, label in USER_LAYERS) if working else ""
+        version, generator = FORMAT_VERSIONS[a.kicad]
+        # KiCad 10 has no table of nets: see net_text().
+        nets = "".join(f'  (net {n} "{name}")\n' for name, n in self.nets.items()) if a.kicad == "9" else ""
         items = self.working_items() if working else self.items
         return (
-            f'(kicad_pcb (version {FORMAT_VERSION}) (generator "generate_protoboard") (generator_version "9.0")\n'
+            f'(kicad_pcb (version {version}) (generator "generate_protoboard") (generator_version "{generator}")\n'
             f"  (general (thickness 1.6) (legacy_teardrops no))\n"
             f'  (paper "A3")\n'
             f"  (layers\n"
@@ -1003,24 +1019,41 @@ class Board:
             f" (solder_mask_min_width {fmt(SOLDER_MASK_MIN_WEB)})"
             # On the first hole, so that KiCad's grid falls on the holes whenever it divides the pitch.
             f" (grid_origin {fmt(self.x(0))} {fmt(self.y(0))}))\n"
-            f"{nets}\n"
+            f"{nets}"
             + "\n".join(items)
             # After the items, as KiCad writes it: a group lists its members by uuid.
             + "\n" + self.group(items)
             + "\n)\n"
         )
 
+    def inner_layer_names(self):
+        """The names of a working copy's inner copper layers, from In1.Cu on: --wire-layers of MCboard.Wires<n>,
+        then MCboard.Chevrons, an even number in all (cli.py sees to it)."""
+        names = [WIRE_LAYER_NAME.format(n) for n in range(1, getattr(self.args, "wire_layers", 1) + 1)]
+        return names + [CHEVRON_LAYER_NAME]
+
     def copper_layers(self, working):
-        """The copper lines of the layer table. A working copy adds --wire-layers inner layers, named
-        MCboard.Wires1 on, an even number (cli.py sees to it). KiCad numbers In<n>.Cu 2n + 2."""
-        wires = getattr(self.args, "wire_layers", 2) if working else 0
-        if not wires:
+        """The copper lines of the layer table. A working copy adds inner_layer_names(). KiCad numbers In<n>.Cu
+        2n + 2."""
+        if not working:
             return '    (0 "F.Cu" signal) (2 "B.Cu" signal)\n'
         lines = ['    (0 "F.Cu" signal)\n']
-        for n in range(1, wires + 1):
-            lines.append(f'    ({2 * n + 2} "In{n}.Cu" signal "{WIRE_LAYER_NAME.format(n)}")\n')
+        for n, name in enumerate(self.inner_layer_names(), 1):
+            lines.append(f'    ({2 * n + 2} "In{n}.Cu" signal "{name}")\n')
         lines.append('    (2 "B.Cu" signal)\n')
         return "".join(lines)
+
+    def layer_report(self):
+        """The working copy's own layers, for the console and the PDF, as "KiCad's name = the working copy's":
+        (copper, user), or None without --working-copy. Wire layers after the first are put together as a range."""
+        if not getattr(self.args, "working_copy", False):
+            return None
+        inner = self.inner_layer_names()
+        wires = len(inner) - 1
+        copper = ([f"In1.Cu = {inner[0]}"] if wires == 1 else
+                  [f"In1.Cu to In{wires}.Cu = {inner[0]} to {wires}"])
+        copper.append(f"In{wires + 1}.Cu = {inner[-1]}")
+        return copper, [f"{layer} = {name}" for layer, name in USER_LAYERS]
 
     @staticmethod
     def group(items):

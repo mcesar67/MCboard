@@ -4,16 +4,20 @@
 Works on the file text, so it does not depend on the installed KiCad, and it reads the format the
 generator writes (KiCad 9), those it wrote before (KiCad 7) and those KiCad 9 and 10 save. These tell it what is what:
 
-  footprint "Hole"            a hole of the grid; its pad's net is the strip or bus it belongs to
+  footprint "Hole"            a hole of the grid; its pad's net is the strip or bus it belongs to, unless a plan has
+                              been applied, which gives it the schematic's net and puts the strip's in the Value
   footprint "ChevronJumper"   a chevron; its two pads have the nets of the holes it joins
-  footprint "Island"          a square top pad; its pad's net is the strip it is tied to
+  footprint "Island"          a square top pad; its pad's net is that of the strip it is tied to
   footprint "MountingHole"    an unplated hole
   anything else               a part placed by the user, whose pads are its pins
 
-Those names are used instead of the references, which a netlist import could reuse on other parts. Row and column come from the sorted positions of the holes.
+Those names are used instead of the references, which a netlist import could reuse on other parts. Row and column
+come from the sorted positions of the holes.
 
-Lines and arcs on the manual wire layer, and lines on the manual chevron layer, are what the user has decided on, which
-planner.py reads.
+Tracks on the inner copper layers named MCboard.Wires<n> and MCboard.Chevrons are what the user has decided on, which
+manual.py reads: straight and curved tracks on a wire layer are wires, straight ones on the chevron layer close
+chevrons. Locked tracks there are the apply button's, and are left out, unless read_board() is asked to take them
+too, as the nets button does.
 
 It keeps a copy of the drawing too, in the same form as Board.art, so that pdf.py can draw this board.
 """
@@ -22,11 +26,12 @@ import math
 import re
 from dataclasses import dataclass, field
 
-from .constants import MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, WORKING_CONNECTIONS_LAYER, WORKING_SILK_LAYERS
+from .constants import CHEVRON_LAYER_NAME, WIRE_LAYER_NAME, WORKING_CONNECTIONS_LAYER, WORKING_SILK_LAYERS
 from .font import text_strokes, text_width
 from .pattern import row_label
 
 HOLE, CHEVRON, ISLAND, MOUNT = "Hole", "ChevronJumper", "Island", "MountingHole"
+HOLE_VALUE = "hole"  # the Value the generator gives a Hole footprint; applying a plan puts the strip's name there
 ART_LAYERS = ("F.Cu", "B.Cu", "F.SilkS", "B.SilkS", "F.Mask", "B.Mask", "Edge.Cuts")
 CIRCLE_STEPS = 48
 
@@ -93,13 +98,14 @@ def polygon(node):
     return [point(p) for p in kids(kid(node, "pts"), "xy")]
 
 
-def reference(fp):
-    """Return a footprint's reference, as a property (newer files) or fp_text (older ones)."""
+def reference(fp, field="Reference"):
+    """Return a footprint's reference, or another of its fields such as "Value", as a property (newer files) or
+    fp_text (older ones)."""
     for p in kids(fp, "property"):
-        if p[1] == "Reference":
+        if p[1] == field:
             return p[2]
     for p in kids(fp, "fp_text"):
-        if p[1] == "reference":
+        if p[1] == field.lower():
             return p[2]
     return "?"
 
@@ -113,7 +119,8 @@ class Hole:
     row: int
     x: float
     y: float
-    strip: str  # the net of its strip or bus
+    strip: str    # the name of its strip or bus, the net the generator gave it
+    net: str = ""  # its pad's net now: the same, or the schematic's once a plan is applied
 
     @property
     def name(self):
@@ -198,10 +205,14 @@ class PlacedBoard:
     corner: tuple    # the sheet position of the upper left board corner
     size: tuple      # width, height
     islands: list = field(default_factory=list)
-    manual: list = field(default_factory=list)  # lines on the manual wire layer: ((x, y), (x, y))
-    manual_arcs: list = field(default_factory=list)  # arcs on it: ((x, y), (x, y), (x, y)), start, middle and end
-    manual_chevrons: list = field(default_factory=list)  # lines on the manual chevron layer: ((x, y), (x, y))
-    manual_other: dict = field(default_factory=dict)  # {layer: how many shapes on it mean nothing to the planner}
+    # The user's tracks. manual is {wire layer name: (lines, arcs)}, a line being ((x, y), (x, y)) and an arc
+    # ((x, y), (x, y), (x, y)), start, middle and end; each layer is apart, as KiCad joins no tracks across layers.
+    manual: dict = field(default_factory=dict)
+    manual_chevrons: list = field(default_factory=list)  # straight tracks on MCboard.Chevrons: ((x, y), (x, y))
+    manual_other: dict = field(default_factory=dict)  # {layer name: how many items on it mean nothing to the planner}
+    layers: dict = field(default_factory=dict)  # {"In1.Cu": "MCboard.Wires1", ...}: the MCboard inner layers
+    renamed: dict = field(default_factory=dict)  # {"In2.Cu": "MCboard.Wires2"}: those with another name on the board
+    foreign: list = field(default_factory=list)  # [("In1.Cu", "GND")]: inner layers that are not a working copy's
 
     @property
     def cols(self):
@@ -336,7 +347,8 @@ def shape_primitives(node):
 
 
 def board_art(tree):
-    """Everything drawn on the board itself and on its tracks, per layer."""
+    """Everything drawn on the board itself and on its tracks, per layer. The planner's tracks are on inner layers,
+    which are not drawn."""
     art = {layer: [] for layer in ART_LAYERS}
     for kind in ("gr_text", "gr_line", "gr_arc", "gr_rect", "gr_circle", "gr_poly"):
         for node in kids(tree, kind):
@@ -354,23 +366,66 @@ def board_art(tree):
     return art
 
 
-def manual_shapes(tree, layer):
-    """The lines, arcs and other shapes on a layer. Text there is just a note."""
-    on_layer = [(kind, node) for kind in ("gr_line", "gr_arc", "gr_rect", "gr_circle", "gr_poly")
-                for node in kids(tree, kind) if layer_of(node) == layer]
-    lines = [(point(kid(node, "start")), point(kid(node, "end"))) for kind, node in on_layer if kind == "gr_line"]
-    arcs = [(point(kid(node, "start")), point(kid(node, "mid")), point(kid(node, "end")))
-            for kind, node in on_layer if kind == "gr_arc" and kid(node, "mid")]
-    return lines, arcs, len(on_layer) - len(lines) - len(arcs)
+def mcboard_layers(tree):
+    """The inner copper layers, from the layer table, whose lines are (<number> "In1.Cu" signal ["<name>"]).
+
+    They are taken by position, as a working copy has them: all wire layers but the last, MCboard.Chevrons. Their
+    names are not trusted, because KiCad's Append Board keeps the names a project already had, and its API cannot
+    rename a layer. A name that is neither KiCad's own nor an MCboard one means the layer is not a working copy's.
+    Returns ({"In1.Cu": "MCboard.Wires1", ..., "In2.Cu": "MCboard.Chevrons"}, {layer: its other name on this board},
+    [(layer, name)] of the layers that are not a working copy's), the first empty if there are any of those."""
+    inner = []
+    for entry in kid(tree, "layers") or []:
+        if isinstance(entry, list) and len(entry) > 2 and re.fullmatch(r"In\d+\.Cu", str(entry[1])):
+            inner.append((int(entry[1][2:-3]), entry[1], entry[3] if len(entry) > 3 else entry[1]))
+    inner.sort()
+    roles = {layer: WIRE_LAYER_NAME.format(i + 1) for i, (_, layer, _) in enumerate(inner[:-1])}
+    if inner:
+        roles[inner[-1][1]] = CHEVRON_LAYER_NAME
+    if len(inner) < 2:
+        roles = {}
+    names = {layer: name for _, layer, name in inner}
+    foreign = [(layer, name) for layer, name in names.items() if name != layer and not name.startswith("MCboard.")]
+    renamed = {layer: names[layer] for layer, role in roles.items() if names[layer] not in (layer, role)}
+    if foreign:
+        return {}, {}, foreign
+    return roles, renamed, foreign
 
 
-def manual_lines(tree):
-    """What the two manual layers hold, in the order of PlacedBoard: wire lines, wire arcs, chevron lines, and
-    {layer: count} of the shapes that mean nothing there. A chevron is closed with a straight line."""
-    wires, arcs, wire_other = manual_shapes(tree, MANUAL_WIRE_LAYER[0])
-    chevrons, chevron_arcs, chevron_other = manual_shapes(tree, MANUAL_CHEVRON_LAYER[0])
-    other = {MANUAL_WIRE_LAYER[0]: wire_other, MANUAL_CHEVRON_LAYER[0]: chevron_other + len(chevron_arcs)}
-    return wires, arcs, chevrons, {layer: n for layer, n in other.items() if n}
+def is_locked(node):
+    """Whether an item is locked: (locked yes) in new files, a bare locked in old ones."""
+    found = kid(node, "locked")
+    return "locked" in node or bool(found and found[1:2] == ["yes"])
+
+
+def manual_tracks(tree, layers, locked=False):
+    """The user's tracks, in the order of PlacedBoard: {wire layer name: (lines, arcs)}, chevron lines, and
+    {layer name: count} of what means nothing there. A chevron is closed with a straight track. Other copper on those
+    layers, such as a drawn shape, is counted but not used; so are arcs on the chevron layer."""
+    wires, chevrons, other = {}, [], {}
+    for kind in ("segment", "arc"):
+        for node in kids(tree, kind):
+            name = layers.get(layer_of(node))
+            if not name or (is_locked(node) and not locked):
+                continue
+            ends = point(kid(node, "start")), point(kid(node, "end"))
+            if name == CHEVRON_LAYER_NAME:
+                if kind == "segment":
+                    chevrons.append(ends)
+                else:
+                    other[name] = other.get(name, 0) + 1
+                continue
+            lines, arcs = wires.setdefault(name, ([], []))
+            if kind == "segment":
+                lines.append(ends)
+            else:
+                arcs.append((ends[0], point(kid(node, "mid")), ends[1]))
+    for kind in ("gr_line", "gr_arc", "gr_rect", "gr_circle", "gr_poly"):
+        for node in kids(tree, kind):
+            name = layers.get(layer_of(node))
+            if name:
+                other[name] = other.get(name, 0) + 1
+    return dict(sorted(wires.items())), chevrons, other
 
 
 def edge_box(art, holes):
@@ -394,23 +449,26 @@ def read_grid(footprints):
         pad = kids(fp, "pad")[0]
         at = kid(pad, "at")
         x, y = on_sheet(fx, fy, angle, float(at[1]), float(at[2]))
-        pads.append((x, y, pad_net(pad), pad))
+        value = reference(fp, "Value")
+        strip = pad_net(pad) if value in (HOLE_VALUE, "?") else value
+        pads.append((x, y, strip, pad, pad_net(pad)))
     xs = sorted({round(p[0], 3) for p in pads})
     ys = sorted({round(p[1], 3) for p in pads})
     holes = {}
-    for x, y, net, _ in pads:
-        if not net:
+    for x, y, strip, _, net in pads:
+        if not strip:
             raise NotAPlacedBoard(f"the hole at {x:.2f}, {y:.2f} has lost its net; "
                                   "regenerate the board and place the parts again")
         col, row = xs.index(round(x, 3)), ys.index(round(y, 3))
-        holes[col, row] = Hole(col, row, x, y, net)
+        holes[col, row] = Hole(col, row, x, y, strip, net)
     if len(holes) != len(xs) * len(ys):
         raise NotAPlacedBoard("the holes do not form a regular grid; has one been moved?")
     return holes, pads
 
 
-def read_board(path):
-    """The PlacedBoard in a .kicad_pcb. Raises NotAPlacedBoard if it cannot be used."""
+def read_board(path, locked=False):
+    """The PlacedBoard in a .kicad_pcb. Raises NotAPlacedBoard if it cannot be used. The locked tracks on the MCboard
+    inner layers, which an apply added, are left out of the user's tracks, unless locked."""
     try:
         with open(path, encoding="utf-8") as fh:
             tree = parse(fh.read())
@@ -435,14 +493,17 @@ def read_board(path):
 
     by_place = {(round(h.x, 3), round(h.y, 3)): h for h in holes.values()}
     chevrons = [read_chevron(fp, by_place, art) for fp in footprints[CHEVRON]]
-    islands = [read_island(fp, holes, art) for fp in footprints[ISLAND]]
+    ties = [(point(kid(n, "start")), point(kid(n, "end"))) for n in kids(tree, "segment") if layer_of(n) == "F.Cu"]
+    islands = [read_island(fp, holes, ties, art) for fp in footprints[ISLAND]]
 
     npth = [footprint_place(fp)[:2] for fp in footprints[MOUNT]]
     mount_drill = drill_of(kids(footprints[MOUNT][0], "pad")[0]) if footprints[MOUNT] else 0.0
     parts = [read_part(fp) for fp in footprints[""]]
     x0, y0, x1, y1 = edge_box(art, holes)
+    layers, renamed, foreign = mcboard_layers(tree)
     return PlacedBoard(str(path), holes, chevrons, [p for p in parts if p.pins], art, pth, npth, drill,
-                       mount_drill, (x0, y0), (x1 - x0, y1 - y0), islands, *manual_lines(tree))
+                       mount_drill, (x0, y0), (x1 - x0, y1 - y0), islands, *manual_tracks(tree, layers, locked), layers,
+                       renamed, foreign)
 
 
 def read_chevron(fp, by_place, art):
@@ -467,18 +528,24 @@ def read_chevron(fp, by_place, art):
     return Chevron(reference(fp), side, first, second)
 
 
-def read_island(fp, holes, art):
-    """An Island, adding its square to the drawing. Its tie is a track, which board_art() has already."""
+def read_island(fp, holes, ties, art):
+    """An Island, adding its square to the drawing. Its tie is a track, which board_art() has already. The tie
+    says which of the four holes round it the island belongs to; the net alone does not, once a plan is applied."""
     x, y, _ = footprint_place(fp)
     pad = kids(fp, "pad")[0]
     half = float(kid(pad, "size")[1]) / 2
     art["F.Cu"].append(("region", [(x - half, y - half), (x + half, y - half),
                                    (x + half, y + half), (x - half, y + half)]))
     net = pad_net(pad)
-    tied = [h for h in holes.values() if h.strip == net]
+    near = lambda h, p: math.hypot(h.x - p[0], h.y - p[1])
+    for start, end in ties:
+        for here, there in ((start, end), (end, start)):
+            if math.hypot(here[0] - x, here[1] - y) < 0.001:
+                return Island(x, y, half, min(holes.values(), key=lambda h: near(h, there)))
+    tied = [h for h in holes.values() if h.net == net]
     if not tied:
         raise NotAPlacedBoard(f"island {reference(fp)} has no hole with its net; regenerate the board")
-    return Island(x, y, half, min(tied, key=lambda h: math.hypot(h.x - x, h.y - y)))
+    return Island(x, y, half, min(tied, key=lambda h: near(h, (x, y))))
 
 
 def read_part(fp):

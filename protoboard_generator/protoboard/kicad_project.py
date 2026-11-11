@@ -10,7 +10,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from .constants import FAB_RULES, MANUAL_LINE_WIDTH, PROJECT_CLEARANCE, PROJECT_RULES
+from .constants import APPLY_WIRE_TRACK, FAB_RULES, MANUAL_LINE_WIDTH, PROJECT_CLEARANCE, PROJECT_RULES
 
 
 def write_project(pcb_path, args, working=False):
@@ -51,6 +51,8 @@ def write_project(pcb_path, args, working=False):
     }
     if working:
         project["board"]["design_settings"]["defaults"] = {"other_line_width": MANUAL_LINE_WIDTH}
+        # The router draws the user's wires with the net class width: that of the applied wires, not of the strips.
+        project["net_settings"]["classes"][0]["track_width"] = APPLY_WIRE_TRACK
     with open(pro_path, "w", encoding="utf-8") as fh:
         json.dump(project, fh, indent=2)
         fh.write("\n")

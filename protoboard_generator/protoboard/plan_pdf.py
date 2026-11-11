@@ -3,21 +3,23 @@
 
 Both sides are always drawn, each as it looks when you have it in front of you, so the bottom side is
 seen from below: its text reads normally and column 1 is on the right. The top side has the parts; the side
-of each chevron has its mark; and wires are on both, since their ends are soldered on the bottom. Then the
-report follows, on its own page.
+of each chevron has its mark, and the other side a dashed one; and wires are on both, since their ends are soldered
+on the bottom, in the colour of their layer. Then the report follows, on its own page.
 """
 
 import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
-from .constants import (PDF_MARGIN, PDF_PAGE, PLAN_BRIDGE_LINE, PLAN_MARK_RGB, PLAN_PART_LINE, PLAN_PART_RGB,
-                        PLAN_PIN_RADIUS, PLAN_REPORT_COLUMNS, PLAN_REPORT_LEADING, PLAN_REPORT_SIZE, PLAN_RING_LINE,
-                        PLAN_RING_RADIUS, PLAN_TEXT_SIZE, PLAN_WIRE_END, PLAN_WIRE_LINE, PLAN_WIRE_RGB)
+from .apply import wire_layer_numbers, wire_layers
+from .constants import (PDF_MARGIN, PDF_PAGE, PLAN_BRIDGE_LINE, PLAN_MARK_RGB, PLAN_OTHER_SIDE_DASH, PLAN_PART_LINE,
+                        PLAN_PART_RGB, PLAN_PIN_RADIUS, PLAN_REPORT_COLUMNS, PLAN_REPORT_LEADING, PLAN_REPORT_SIZE,
+                        PLAN_RING_LINE, PLAN_RING_RADIUS, PLAN_TEXT_SIZE, PLAN_WIRE_COLOURS, PLAN_WIRE_END,
+                        PLAN_WIRE_LINE, WIRE_LAYER_NAME)
 from .pdf import pdf_circle, pdf_number as n, pdf_pages, write_pdf_file
-from .planner import report
+from .plan import report
 
-LEGEND = "Red: chevrons to close. Blue: wires to add. Green: parts. Dots: holes with a pin."
+LEGEND = "Magenta: chevrons to close, dashed if on the other side. Green: parts. Dots: holes with a pin."
 TEXT_WIDTH_FACTOR = 0.5  # Helvetica's average character width, as a fraction of its size
 
 
@@ -44,6 +46,10 @@ class PlanDrawing:
         """Return no lines, as the distances are not read back from the file."""
         return []
 
+    def layer_report(self):
+        """Return nothing: the plan's PDF does not list the layers."""
+        return None
+
     def name(self):
         """Return the name of the board, built from its size."""
         return f"MCboard {self.board.cols}x{self.board.rows}"
@@ -63,21 +69,41 @@ def label(x, y, text, size=PLAN_TEXT_SIZE, flipped=False):
     return f"BT /F1 {n(size)} Tf {place} ({pdf_string(text)}) Tj ET"
 
 
-def chevron_marks(drawing, chevron):
-    """Return the PDF operators of the ring and the bridge over a chevron to close."""
+def chevron_marks(drawing, chevron, other_side=False):
+    """Return the PDF operators of the ring and the bridge over a chevron to close, dashed if it is on the other side
+    of the board from the one drawn."""
     r, g, b = PLAN_MARK_RGB
+    dash = f"[{n(PLAN_OTHER_SIDE_DASH[0])} {n(PLAN_OTHER_SIDE_DASH[1])}] 0 d" if other_side else "[] 0 d"
     x, y = drawing.from_corner(chevron.x, chevron.y)
     x1, y1 = drawing.from_corner(chevron.first.x, chevron.first.y)
     x2, y2 = drawing.from_corner(chevron.second.x, chevron.second.y)
     # The bridge covers only the chevron, not the holes: half way from its centre to each hole.
-    return [f"{r} {g} {b} RG {n(PLAN_RING_LINE)} w", pdf_circle(x, y, PLAN_RING_RADIUS) + " S",
-            f"{n(PLAN_BRIDGE_LINE)} w",
-            f"{n((x + x1) / 2)} {n((y + y1) / 2)} m {n((x + x2) / 2)} {n((y + y2) / 2)} l S"]
+    bridge = PLAN_RING_LINE if other_side else PLAN_BRIDGE_LINE
+    return ["q", f"{r} {g} {b} RG {n(PLAN_RING_LINE)} w {dash}", pdf_circle(x, y, PLAN_RING_RADIUS) + " S",
+            f"{n(bridge)} w",
+            f"{n((x + x1) / 2)} {n((y + y1) / 2)} m {n((x + x2) / 2)} {n((y + y2) / 2)} l S", "Q"]
 
 
-def wire_marks(drawing, wire, name, flipped=False):
-    """Return the PDF operators of a wire: its path, the circles at its ends and its name."""
-    r, g, b = PLAN_WIRE_RGB
+def wire_colour(number):
+    """(name, (r, g, b)) of the wires on MCboard.Wires<number>."""
+    return PLAN_WIRE_COLOURS[(number - 1) % len(PLAN_WIRE_COLOURS)]
+
+
+def wire_legend(plan, numbers):
+    """The legend's words for the wires' colours."""
+    used = sorted(set(numbers.values()))
+    if not used:
+        return "No wires to add."
+    if not wire_layers(plan.board.layers):
+        return "Wires to add: a colour per net."
+    return "Wires to add, by layer: " + ", ".join(f"{WIRE_LAYER_NAME.format(k)} {wire_colour(k)[0]}"
+                                                  for k in used) + "."
+
+
+def wire_marks(drawing, wire, name, number, flipped=False):
+    """Return the PDF operators of a wire: its path, the circles at its ends and its name, in the colour of its
+    layer."""
+    r, g, b = wire_colour(number)[1]
     points = [drawing.from_corner(x, y) for x, y in wire.drawn]
     line = " ".join(f"{n(x)} {n(y)} {'l' if i else 'm'}" for i, (x, y) in enumerate(points)) + " S"
     # The name goes on the longer piece.
@@ -115,11 +141,15 @@ def plan_marks(drawing, plan):
     for part in plan.board.parts:
         if part.ref in plan.placed:
             marks["F"] += part_marks(drawing, part)
-    for _, chevron in plan.chevrons:
-        marks[chevron.side] += chevron_marks(drawing, chevron)
+    # The other side's chevrons go first, under this side's.
+    for side in marks:
+        for other_side in (True, False):
+            marks[side] += [op for _, c in plan.chevrons if (c.side != side) == other_side
+                            for op in chevron_marks(drawing, c, other_side)]
+    numbers = wire_layer_numbers(plan, len(PLAN_WIRE_COLOURS))
     for i, wire in enumerate(plan.wires, 1):
-        marks["F"] += wire_marks(drawing, wire, f"W{i}")
-        marks["B"] += wire_marks(drawing, wire, f"W{i}", flipped=True)
+        marks["F"] += wire_marks(drawing, wire, f"W{i}", numbers[wire])
+        marks["B"] += wire_marks(drawing, wire, f"W{i}", numbers[wire], flipped=True)
     return marks
 
 
@@ -152,5 +182,6 @@ def write_plan_pdf(plan, path):
     drawing = PlanDrawing(plan.board)
     found = pdf_pages(drawing, plan_marks(drawing, plan))
     pages, scale = found if found else ([], None)
-    pages = pages + text_pages([LEGEND, ""] + report(plan))
+    legend = [LEGEND, wire_legend(plan, wire_layer_numbers(plan, len(PLAN_WIRE_COLOURS)))]
+    pages = pages + text_pages(legend + [""] + report(plan))
     return write_pdf_file(Path(path), f"{drawing.name()}, plan", pages, mono_font=True), scale

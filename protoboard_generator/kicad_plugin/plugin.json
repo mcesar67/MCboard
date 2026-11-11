@@ -2,20 +2,82 @@
   "$schema": "https://go.kicad.org/api/schemas/v1",
   "identifier": "io.github.mcesar67.mcboard",
   "name": "MCboard",
-  "description": "Plans a circuit placed on an MCboard working copy: which chevrons to close and which wires to add.",
+  "description": "Plans a circuit placed on an MCboard working copy: which chevrons to close and which wires to add, puts the plan into the copper for the ratsnest, and updates the ratsnest while wiring by hand.",
   "runtime": {
     "type": "python"
   },
   "actions": [
     {
-      "identifier": "plan",
+      "identifier": "step0-nets",
+      "name": "MCboard nets",
+      "description": "For wiring by hand: update the nets after drawing chevrons and wires, so the ratsnest shows only the connections still missing",
+      "show-button": true,
+      "scopes": [
+        "pcb"
+      ],
+      "entrypoint": "nets_action.py",
+      "icons-light": [
+        "nets_24.png",
+        "nets_48.png"
+      ],
+      "icons-dark": [
+        "nets_24.png",
+        "nets_48.png"
+      ]
+    },
+    {
+      "identifier": "step1-plan",
       "name": "MCboard plan",
       "description": "Work out which chevrons to close and which wires to add for the placed parts",
       "show-button": true,
-      "scopes": ["pcb"],
+      "scopes": [
+        "pcb"
+      ],
       "entrypoint": "plan_action.py",
-      "icons-light": ["icon_24.png", "icon_48.png"],
-      "icons-dark": ["icon_24.png", "icon_48.png"]
+      "icons-light": [
+        "icon_24.png",
+        "icon_48.png"
+      ],
+      "icons-dark": [
+        "icon_24.png",
+        "icon_48.png"
+      ]
+    },
+    {
+      "identifier": "step2-apply",
+      "name": "MCboard apply",
+      "description": "Put the plan into the copper: schematic nets on the strips, tracks for closed chevrons and wires",
+      "show-button": true,
+      "scopes": [
+        "pcb"
+      ],
+      "entrypoint": "apply_action.py",
+      "icons-light": [
+        "apply_24.png",
+        "apply_48.png"
+      ],
+      "icons-dark": [
+        "apply_24.png",
+        "apply_48.png"
+      ]
+    },
+    {
+      "identifier": "step3-clear",
+      "name": "MCboard clear",
+      "description": "Take the board back to before planning and applying: remove the applied tracks and the plan marks, give the strips their own nets",
+      "show-button": true,
+      "scopes": [
+        "pcb"
+      ],
+      "entrypoint": "clear_action.py",
+      "icons-light": [
+        "clear_24.png",
+        "clear_48.png"
+      ],
+      "icons-dark": [
+        "clear_24.png",
+        "clear_48.png"
+      ]
     }
   ]
 }

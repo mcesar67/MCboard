@@ -59,7 +59,10 @@ python3 plan_board.py <folder>/<name>_working.kicad_pcb
 ```
 
 It prints which chevrons to close and which wires to add, and writes a PDF with both sides marked. The same is
-available as a button in KiCad's PCB editor, installed with `python3 install_kicad_plugin.py`.
+available as a button in KiCad's PCB editor, installed with `python3 install_kicad_plugin.py`, and a second button
+applies the plan to the working copy, so that KiCad's ratsnest shows what is left to wire. A third clears both, and a
+fourth, for wiring by hand, updates the ratsnest after each chevron or wire you draw yourself, without planning. They
+are described in [the manual](docs/MANUAL.md#21-what-the-plan-gives-you).
 
 Everything else, options, mounting holes, checking a board, reading the plan and drawing part of the wiring yourself,
 is in the [user manual](docs/MANUAL.md).
@@ -69,8 +72,8 @@ is in the [user manual](docs/MANUAL.md).
 - With `--top smt`, excess solder can close a chevron hidden under a part.
 - The planner is a heuristic: it always gives the same plan for the same board, but that plan may not have the fewest
   wires or chevrons, and placement decides whether a plan exists at all.
-- The KiCad button needs KiCad 9.0 or later with its API turned on, and fetches the `kicad-python` package the first
-  time.
+- The KiCad buttons need KiCad 9.0 or later with its API turned on, and fetch the `kicad-python` package the first
+  time. They have been tried on KiCad 9 and 10, on Linux and Windows 11, but not on macOS.
 - Text in very dense characters, such as CJK at 1 mm, may fill in when printed.
 - There is no automated test suite yet.
 
@@ -80,7 +83,7 @@ is in the [user manual](docs/MANUAL.md).
 |---|---|
 | `protoboard_generator/generate_protoboard.py` | The generator's entry point |
 | `protoboard_generator/plan_board.py` | The planner's entry point |
-| `protoboard_generator/install_kicad_plugin.py`, `kicad_plugin/` | The KiCad button |
+| `protoboard_generator/install_kicad_plugin.py`, `kicad_plugin/` | The KiCad buttons |
 | `protoboard_generator/protoboard/` | The code. Its `__init__.py` is the reading guide |
 | `protoboard_generator/rules/`, `fonts/` | Fab rules and the stroke font, see `NOTICE.md` |
 | `examples/` | Generated boards ready to open or order: a classic breadboard, the default, and the default with `--top smt` |
