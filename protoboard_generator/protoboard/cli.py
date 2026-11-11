@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from .board import Board
-from .constants import MARGIN_DEFAULT, MARGIN_PLAIN, MOUNT_MIN_SPACING, PDF_SCALES
+from .constants import MARGIN_DEFAULT, MARGIN_PLAIN, MAX_INNER_COPPER, MOUNT_MIN_SPACING, PDF_SCALES
 from .font import check_user_text
 from .gerber import write_fab_zip
 from .kicad_project import write_project
@@ -30,16 +30,16 @@ def default_name(cols, rows):
 
 
 def command_line(argv):
-    """The command as typed, for the PDF, without -o and --working-copy, which do not change the board: one
-    says where the files went, and its path may tell more about the computer than whoever gets the PDF needs,
-    and the other only adds a file."""
+    """The command as typed, for the PDF, without -o, --working-copy and --wire-layers, which do not change the
+    board: one says where the files went, and its path may tell more about the computer than whoever gets the PDF
+    needs, and the others only add a file and shape it."""
     kept, skip = [], False
     for arg in argv[1:]:
         if skip:
             skip = False
-        elif arg in ("-o", "--out"):
+        elif arg in ("-o", "--out", "--wire-layers"):
             skip = True
-        elif arg != "--working-copy" and not arg.startswith(("--out=", "-o")):
+        elif arg != "--working-copy" and not arg.startswith(("--out=", "-o", "--wire-layers=")):
             kept.append(arg)
     return shlex.join([Path(argv[0]).name] + kept)
 
@@ -148,6 +148,10 @@ def main():
                          "lines and arcs drawn on User.3 are wires of your own for the plan, and lines on User.4 chevrons to "
                          "close; the plan button draws on User.5. "
                          "Never order from it")
+    ap.add_argument("--wire-layers", type=int,
+                    help="inner copper layers of the working copy for wires, MCboard.Wires1 on, such as one per "
+                         f"wire colour, up to {MAX_INNER_COPPER} (2). KiCad needs an even number of copper layers, so "
+                         "an odd number is raised to the next even one")
     ap.add_argument("--fab", choices=["jlcpcb", "pcbway", "generic", "none"], default="generic",
                     help="fab design rules to include (generic, which satisfies jlcpcb and pcbway)")
     args = ap.parse_args()
@@ -161,6 +165,16 @@ def main():
         args.out += ".kicad_pcb"
     if args.margin is None:
         args.margin = args.margin_plain if args.no_mount_holes else MARGIN_DEFAULT
+    if args.wire_layers is not None and not args.working_copy:
+        sys.exit("--wire-layers is for the working copy: add --working-copy.")
+    if args.wire_layers is None:
+        args.wire_layers = 2
+    if not 1 <= args.wire_layers <= MAX_INNER_COPPER:
+        sys.exit(f"--wire-layers must be from 1 to {MAX_INNER_COPPER}.")
+    if args.wire_layers % 2:
+        args.wire_layers += 1
+        print(f"--wire-layers: KiCad needs an even number of copper layers, so the working copy has "
+              f"{args.wire_layers}.", file=sys.stderr)
 
     if args.text is not None:
         args.text = args.text.strip()

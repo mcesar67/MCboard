@@ -185,7 +185,7 @@ The generator writes these itself, without KiCad, from a copy of the geometry ke
 - The scale note, the mounting hole distances and the command line do not count for the fit, so they never lower the
   scale; on a board that nearly fills the page they enter the margin (by at most 5 mm, 9.5 mm and one line).
 - The command line at the foot leaves out `-o`, whose path may say more about the computer than the reader needs, and
-  `--working-copy`, which only adds a file. Lines break between options, never inside one (`PDF_COMMAND_LINES`).
+  `--working-copy` and `--wire-layers`, which only add a file and shape it. Lines break between options, never inside one (`PDF_COMMAND_LINES`).
 - Both fonts declare `WinAnsiEncoding`: without it a viewer uses the fonts' standard encoding, which draws the `'` of a
   quoted `--text` as a curly quote that a shell would not take.
 - Both PDFs, the generator's and the plan's, go through `write_unlocked()`: a file held open by a viewer, as on Windows,
@@ -268,6 +268,15 @@ hand.
   shows its silkscreen; the PDF paints the drills after the silkscreen so that the lines stop at the holes. Layer colours belong to KiCad's theme, so the file does not
   set them. Its `.kicad_pro` sets the default line width of other layers to `MANUAL_LINE_WIDTH` (0.3), because KiCad's
   0.1 is hard to see over the pads.
+- The working copy has `--wire-layers` inner copper layers (2 by default), named `MCboard.Wires1` on
+  (`WIRE_LAYER_NAME`), for wires as tracks, so that KiCad's ratsnest can see them; several, to tell wire colours
+  apart. Tracks of different nets crossing on one layer do not join in the ratsnest, so one layer is enough for that.
+  They start at the first inner layer after the board's own copper, which is `In1.Cu` today, so that a board with inner
+  planes would keep them. KiCad numbers inner layers from `In1` with no gaps, only up to `In30` (`MAX_INNER_COPPER`),
+  and loads no file with an odd number of copper layers, so an odd count is raised by one, with a message: an extra
+  layer with no name among the named ones looked like something else. The
+  generator writes them because KiCad's API cannot add or rename a layer; whatever uses them must find them by name.
+  The plain board keeps its two copper layers.
 - Every item the generator writes is a member of one locked group named `MCboard` (`Board.group()`, from the first uuid
   of each item, which is its own). A board can then be appended to a project's PCB and deleted again with one click,
   leaving the parts and the manual lines, which does away with a script to swap boards. Its members are written a few to

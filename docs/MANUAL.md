@@ -405,6 +405,7 @@ To choose a pattern for a part, count how many free holes each pin keeps: a stri
 | `--pitch`, `--drill`, `--pad`, `--track`, `--bus`, `--gap`, `--chev-width`, `--chev-depth`, `--mask-margin`, `--margin`, `--margin-plain` | Dimensions. |
 | `--origin-x`, `--origin-y` | Where the board's corner sits on KiCad's drawing sheet (50, 50). |
 | `--working-copy` | Also write the working copy for planning, see [2.3](#23-prepare-the-board). |
+| `--wire-layers` | Inner copper layers for wires in the working copy, up to 30 (2), see [2.3](#23-prepare-the-board). |
 
 ---
 
@@ -485,6 +486,12 @@ only its own folder. Restart the PCB editor.
    | `User.3`, `MCboard.ManualWires` | Wires you decide yourself, see [2.8](#28-decide-part-of-the-wiring-yourself). |
    | `User.4`, `MCboard.ManualChevrons` | Chevrons you decide yourself. |
    | `User.5`, `MCboard.Plan` | The button's marks. Draw nothing of your own here. |
+   | `In1.Cu` on, `MCboard.Wires1` on | Inner copper for wires: as many as `--wire-layers` asks, one per wire colour if you like. Nothing is drawn on them yet. |
+
+   KiCad needs an even number of copper layers, so an odd `--wire-layers` is raised to the next even number, with a
+   message. These layers only exist in the working copy; the board you order has two copper layers. KiCad keeps layer
+   colours in its colour theme, not in the board, so to give each wire layer the colour of its wires, change them in
+   **Preferences > PCB Editor > Colors**.
 
    KiCad's grid origin is set on hole A1. `plan_board.py` also takes a plain generated board, without those layers;
    the button needs `MCboard.Plan` for its marks.

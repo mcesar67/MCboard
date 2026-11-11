@@ -20,7 +20,7 @@ from .constants import (FORMAT_VERSION, GERBER_LAYERS, ISLAND_SIDE, ISLAND_TIE, 
                         LABEL_CHAR_WIDTH, LABEL_GAP, LABEL_THICKNESS, LABEL_TO_EDGE,
                         MOUNT_TO_EDGE, MOUNT_TO_LABEL, NAME_GAP, NAME_GAP_TOP, NAME_TO_EDGE, SILK_BAR_SLACK,
                         MANUAL_CHEVRON_LAYER, MANUAL_WIRE_LAYER, PLAN_MARKS_LAYER, SILK_BAR_STEPS, SILK_TO_PAD, SOLDER_MASK_MIN_WEB, WORKING_CONNECTION_WIDTH,
-                        WORKING_CONNECTIONS_LAYER, WORKING_LABELS_LAYER)
+                        WIRE_LAYER_NAME, WORKING_CONNECTIONS_LAYER, WORKING_LABELS_LAYER)
 from .font import text_extent, text_strokes, text_width
 from .mounting import SideSpec, corner_strip, holes_that_fit, mount_min_distance, placed, side_strip, widest_spacing
 from .pattern import RowPattern
@@ -987,7 +987,7 @@ class Board:
             f"  (general (thickness 1.6) (legacy_teardrops no))\n"
             f'  (paper "A3")\n'
             f"  (layers\n"
-            f'    (0 "F.Cu" signal) (2 "B.Cu" signal)\n'
+            f"{self.copper_layers(working)}"
             f'    (9 "F.Adhes" user "F.Adhesive") (11 "B.Adhes" user "B.Adhesive")\n'
             f'    (13 "F.Paste" user) (15 "B.Paste" user)\n'
             f'    (5 "F.SilkS" user "F.Silkscreen") (7 "B.SilkS" user "B.Silkscreen")\n'
@@ -1009,6 +1009,18 @@ class Board:
             + "\n" + self.group(items)
             + "\n)\n"
         )
+
+    def copper_layers(self, working):
+        """The copper lines of the layer table. A working copy adds --wire-layers inner layers, named
+        MCboard.Wires1 on, an even number (cli.py sees to it). KiCad numbers In<n>.Cu 2n + 2."""
+        wires = getattr(self.args, "wire_layers", 2) if working else 0
+        if not wires:
+            return '    (0 "F.Cu" signal) (2 "B.Cu" signal)\n'
+        lines = ['    (0 "F.Cu" signal)\n']
+        for n in range(1, wires + 1):
+            lines.append(f'    ({2 * n + 2} "In{n}.Cu" signal "{WIRE_LAYER_NAME.format(n)}")\n')
+        lines.append('    (2 "B.Cu" signal)\n')
+        return "".join(lines)
 
     @staticmethod
     def group(items):

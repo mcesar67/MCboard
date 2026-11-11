@@ -88,6 +88,11 @@ MANUAL_WIRE_LAYER = ("User.3", "MCboard.ManualWires")        # wires drawn by ha
 MANUAL_CHEVRON_LAYER = ("User.4", "MCboard.ManualChevrons")  # chevrons marked by hand as closed
 PLAN_MARKS_LAYER = ("User.5", "MCboard.Plan")             # the plan button's marks, cleared on each run
 MANUAL_LINE_WIDTH = 0.3    # default width of lines drawn on those, and on the other user layers
+# Inner copper layers of a working copy, for wires as tracks, named 1 on from the first inner layer after the
+# board's own copper. KiCad numbers inner layers from In1 with no gaps, only up to In30, and loads no file with
+# an odd number of copper layers, so an odd --wire-layers is raised by one.
+WIRE_LAYER_NAME = "MCboard.Wires{}"
+MAX_INNER_COPPER = 30
 
 PROJECT_CLEARANCE = 0.2    # the Default net class clearance in the .kicad_pro
 
