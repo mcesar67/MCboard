@@ -22,7 +22,7 @@ The planner uses pdf, font, constants and the row names of pattern, and nothing 
   planner        pins to strips, then which chevrons to close and which wires to add
   plan_pdf       the drawing with the marks, and the report as text pages
 
-../kicad_plugin/action.py is the button in KiCad: a thin layer over those, and the only code using pcbnew.
+../kicad_plugin/plan_action.py is the button in KiCad: a thin layer over those, and the only code using KiCad's API.
 
 The flow is short:
 

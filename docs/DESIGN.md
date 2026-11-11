@@ -203,7 +203,8 @@ The generator writes these itself, without KiCad, from a copy of the geometry ke
 ## Planner
 
 - `protoboard/kicad_file.py` reads the `.kicad_pcb` with its own parser, not `pcbnew`, so it does not depend on the
-  installed KiCad. Only `kicad_plugin/action.py` uses `pcbnew`, kept thin because KiCad has deprecated those bindings.
+  installed KiCad. Only `kicad_plugin/plan_action.py` talks to KiCad, through the IPC API (`kicad-python`), and it is
+  kept thin. The SWIG bindings (`pcbnew`) it used before are deprecated and go in KiCad 11.
   It reads file formats 7, 9 and 10; format 10 has no top-level net table.
 - Generated footprints are `board_only`, with refs `PBH`, `PBJP`, `PBJT`, `PBIS`, `PBMH`, so a netlist update neither
   deletes them nor matches them to a schematic's `H1` or `JP1`. The planner goes by footprint name (`Hole`,
@@ -277,14 +278,21 @@ hand.
 
 ### The button
 
-- The marks go on `User.5`, named `MCboard.Plan` (`PLAN_MARKS_LAYER`), in a group named `MCboard plan`. Each run deletes
-  the group and everything on that layer, so marks that lost their group, after a board swap or an undo, go too. A
-  `User.5` under another name is refused rather than emptied.
+- It is an IPC API plugin (`plugin.json`, `requirements.txt`): KiCad runs `plan_action.py` in a process and Python
+  environment of its own, and the script reaches the open editor through a socket. It needs KiCad's API turned on.
+- The marks go on `User.5`, named `MCboard.Plan` (`PLAN_MARKS_LAYER`). Each run replaces everything on that layer in
+  one commit, so one undo step. The API of KiCad 9 can neither add or name a layer nor make groups, so the marks are
+  known by their layer alone, and a board without the layer is refused with a note on how to add it; working copies
+  have it. A `User.5` under another name is refused rather than emptied. The layer table is read from the board text.
 - The button never changes the layer's visibility: set from a plugin, the Layers panel and the view fall out of step,
-  and the next click hides the layer. A plugin also cannot make KiCad rebuild the Layers panel, so an added layer shows
-  there only after the board is reopened; the report says so.
-- It plans what the editor has, saved or not, through a temporary copy (`SaveBoard` with `aSkipSettings`, so the open
-  project keeps its name).
+  and the next click hides the layer.
+- KiCad makes that environment with `--system-site-packages`, and on Linux the system's `dist-packages` came ahead of
+  it, so Ubuntu's protobuf 4 hid the 5.x that `kicad-python` needs. The script puts its environment's packages first
+  before importing anything.
+- It plans what the editor has, saved or not, from the board's text (`get_as_string`) written to a temporary file.
+- The report is a tkinter window, since wx is KiCad's and not in the plugin's environment. Without tkinter it goes to
+  `<board>_plan.txt`, opened in the system's editor. Errors go to the same place, as KiCad 9 shows nothing a plugin
+  prints.
 
 ## Rejected options
 
@@ -352,6 +360,7 @@ After changing the planner, run `plan_board.py` on the boards in `tests/t555/`:
 - The generator's PDF must not change when only the plan's PDF does, and with `--working-copy` the plan's PDF from
   `b_working.kicad_pcb` must match that from `b.kicad_pcb`.
 
-After changing the button, run `run_plan()` from `action.py` twice through `pcbnew` on a copy of a placed board, saving
-and reloading in between: the marks must stay on `MCboard.Plan` (`User.5`), one set only, and a `User.5` under another
-name must be refused.
+After changing the button, press it twice in the KiCad window on a copy of a placed working copy: the marks must stay
+on `MCboard.Plan` (`User.5`), one set only, and one undo must take a run back. A board without that layer, and one
+whose `User.5` has another name, must be refused. The API needs a running KiCad, so this cannot run headless; the
+script's logic can, with `run_plan()` given a stand-in for the board object.

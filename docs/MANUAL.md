@@ -431,7 +431,10 @@ The planner works only on boards made by `generate_protoboard.py`.
 
 ## 2.2 Requirements and installing the button
 
-- KiCad 9.0, with its PCB editor and its Python scripting.
+- KiCad 9.0 or later, with its API turned on: **Preferences > Plugins > Enable KiCad API**. The button talks to the
+  PCB editor through that API.
+- On Linux, a Python 3 in the `PATH` that can make virtual environments (on Debian and Ubuntu, the `python3-venv`
+  package). On Windows and macOS KiCad brings its own Python.
 - Python 3, to run the installer or `plan_board.py`. Nothing beyond the standard library.
 
 To install the button, from the `protoboard_generator` folder:
@@ -444,23 +447,23 @@ It copies the plugin to a folder named `mcboard_plan` in KiCad's plugin folder:
 
 | System | Default plugin folder |
 |---|---|
-| Linux | `~/.local/share/kicad/9.0/scripting/plugins` |
-| Windows, macOS | `~/Documents/KiCad/9.0/scripting/plugins` |
+| Linux | `~/.local/share/kicad/9.0/plugins` |
+| Windows, macOS | `~/Documents/KiCad/9.0/plugins` |
 
-If yours is elsewhere, for example when Windows keeps Documents in OneDrive, find it in the PCB editor with **Tools >
-External Plugins > Open Plugin Directory** and give it:
+If yours is elsewhere, for example when Windows keeps Documents in OneDrive, give it:
 
 ```bash
-python3 install_kicad_plugin.py --dir "C:\path\to\scripting\plugins"
+python3 install_kicad_plugin.py --dir "C:\path\to\KiCad\9.0\plugins"
 ```
 
-`--version` changes the `9.0` in the default paths.
+`--version` changes the `9.0` in the default paths, for example `--version 10.0`.
 
-Then, in the PCB editor, choose **Tools > External Plugins > Refresh Plugins**. The button appears in **Tools > External
-Plugins** and on the toolbar as **MCboard plan**.
+Then restart the PCB editor. The first time, KiCad makes a Python environment for the button and fetches the
+`kicad-python` package into it, which needs the internet and takes a minute. The button appears on the toolbar as
+**MCboard plan** when that is done.
 
 **Update:** the plugin holds its own copy of the code, so run the installer again after updating MCboard. It replaces
-only its own folder. Refresh the plugins, and restart KiCad if it still behaves as before.
+only its own folder. Restart the PCB editor.
 
 **Uninstall:** delete the `mcboard_plan` folder and restart KiCad.
 
@@ -483,7 +486,8 @@ only its own folder. Refresh the plugins, and restart KiCad if it still behaves 
    | `User.4`, `MCboard.ManualChevrons` | Chevrons you decide yourself. |
    | `User.5`, `MCboard.Plan` | The button's marks. Draw nothing of your own here. |
 
-   KiCad's grid origin is set on hole A1. A plain generated board works too, without those layers.
+   KiCad's grid origin is set on hole A1. `plan_board.py` also takes a plain generated board, without those layers;
+   the button needs `MCboard.Plan` for its marks.
 
    **Generating again overwrites the working copy, parts included.** Generate once, then work on that file.
 
@@ -517,15 +521,18 @@ with no pin on the grid is listed as not on the board, and left out of the plan.
 
 **With the button.** Press **MCboard plan**. It works on what the editor has now, so you need not save first. You get:
 
-- a window with the report, which can stay open while you work. Pressing the button again updates it;
+- a window with the report, which can stay open while you work. Each press opens a new one;
 - `<board>_plan.pdf` next to the board, or in the temporary folder if the board has never been saved;
-- marks on the `MCboard.Plan` layer (`User.5`): a ring on each chevron to close and the path of each wire. They form a
-  group named `MCboard plan`, so you can select and delete them together. Each run replaces those of the last one.
+- marks on the `MCboard.Plan` layer (`User.5`): a ring on each chevron to close and the path of each wire. Each run
+  replaces everything on that layer, as one step that **Edit > Undo** takes back.
 
-If the board has no `MCboard.Plan` layer, the button adds it; KiCad lists it in the Layers panel only after the board is
-saved and opened again. If `User.5` is already used under another name, the button refuses the board rather than delete
-what is there: rename the layer or move its contents. The button never changes the layer's visibility; the report says
-when the layer is hidden.
+If the Python that runs the button has no tkinter, the report goes to `<board>_plan.txt` instead, opened in your text
+editor.
+
+The button needs the `MCboard.Plan` layer, which working copies have; KiCad's API cannot add a layer. On another
+generated board, enable `User.5` in **Board Setup > Board Layers** and name it `MCboard.Plan`. If `User.5` is already
+used under another name, the button refuses the board rather than delete what is there: rename the layer or move its
+contents. The button never changes the layer's visibility; the report says when the layer is hidden.
 
 Move parts and press the button again as often as you like.
 
@@ -667,8 +674,12 @@ Order the board from the zip of the board you settled on, never from the project
 
 ## 2.12 Troubleshooting
 
-- **The button does not appear.** Check that `mcboard_plan` is in the folder shown by **Open Plugin Directory**, and use
-  **Refresh Plugins**. If the installer's default is not the folder your KiCad uses, install with `--dir`.
+- **The button does not appear.** Check that the API is on, in **Preferences > Plugins**, and that `mcboard_plan` is in
+  the `plugins` folder of the KiCad version you run; if the installer's default is not that folder, install with
+  `--dir`. Then restart KiCad. If it still does not show, the button's Python environment may have failed to build, for
+  example with no internet or, on Linux, no `python3-venv`: in the PCB editor's preferences, in the list of plugin
+  buttons, right-click it and choose **Recreate Plugin Environment**.
+- **"it has no MCboard.Plan layer".** See [2.5](#25-run-the-plan).
 - **"This board cannot be used".** The board was not made by the generator, or its holes are missing.
 - **Pins stay 0.05 to 0.08 mm off every hole.** KiCad's grid origin is not on hole A1. Set it on the centre of A1 with
   **Place > Grid Origin**, then move the parts again.

@@ -11,9 +11,13 @@ How to prepare the board, place the parts, and read the report and the drawing i
 
 ## Requirements
 
-- KiCad 9.0.
+- KiCad 9.0 or later, with its API turned on: **Preferences > Plugins > Enable KiCad API**.
+- On Linux, a Python 3 in the `PATH` that can make virtual environments (on Debian and Ubuntu, the `python3-venv`
+  package). On Windows and macOS KiCad brings its own Python.
+- An internet connection the first time, for KiCad to fetch the `kicad-python` package.
 - Python 3 to run the installer. It needs nothing beyond the standard library.
-- A board made by `generate_protoboard.py`. The plugin does not work on any other board.
+- A working copy made by `generate_protoboard.py --working-copy`, or another generated board with a `User.5` layer
+  named `MCboard.Plan`. The plugin does not work on any other board.
 
 ## Install
 
@@ -29,26 +33,27 @@ It copies the plugin to a folder named `mcboard_plan` inside KiCad's plugin fold
 
 | System | Default plugin folder |
 |---|---|
-| Linux | `~/.local/share/kicad/9.0/scripting/plugins` |
-| Windows, macOS | `~/Documents/KiCad/9.0/scripting/plugins` |
+| Linux | `~/.local/share/kicad/9.0/plugins` |
+| Windows, macOS | `~/Documents/KiCad/9.0/plugins` |
 
-If yours is elsewhere, for example when Windows keeps Documents in OneDrive, look it up in the PCB editor with
-**Tools > External Plugins > Open Plugin Directory** and pass it on:
+If yours is elsewhere, for example when Windows keeps Documents in OneDrive, pass the folder on:
 
 ```bash
-python3 install_kicad_plugin.py --dir "C:\path\to\scripting\plugins"
+python3 install_kicad_plugin.py --dir "C:\path\to\KiCad\9.0\plugins"
 ```
 
-`--version` changes the `9.0` in those paths.
+`--version` changes the `9.0` in those paths, for example `--version 10.0`.
 
-Then, in the PCB editor, choose **Tools > External Plugins > Refresh Plugins**. The button appears as
-**Tools > External Plugins > MCboard plan**, and also on the toolbar.
+Then restart the PCB editor. The first time, KiCad makes a Python environment for the plugin and installs
+`kicad-python` in it, which takes a minute; the button appears on the toolbar as **MCboard plan** when that is done.
+
+The button used to be a SWIG Action Plugin in `scripting/plugins`. When installing to the default folder, the installer
+removes that earlier version, so that there are not two buttons.
 
 ## Update
 
 The plugin holds its own copy of the code, so changes in this folder do not reach KiCad by themselves. Run the
-installer again, which replaces only its own folder. Then refresh the plugins, and restart KiCad if it still behaves as
-before.
+installer again, which replaces only its own folder, and restart the PCB editor.
 
 ## Uninstall
 
@@ -56,9 +61,12 @@ Delete the `mcboard_plan` folder from the plugin folder and restart KiCad.
 
 ## The button does not appear
 
-Check that `mcboard_plan` is in the folder shown by **Open Plugin Directory**, and use **Refresh Plugins**. The
-installer's default may not be the folder your KiCad uses, in which case install with `--dir`. Other problems are in
-[the manual's troubleshooting](../../docs/MANUAL.md#212-troubleshooting).
+- Check that the API is on, in **Preferences > Plugins**, and that `mcboard_plan` is in the plugin folder of the KiCad
+  version you run. Then restart KiCad.
+- The Python environment may have failed to build, for example with no internet or, on Linux, no `python3-venv`. In
+  the PCB editor's preferences, in the list of plugin buttons, right-click it and choose **Recreate Plugin
+  Environment**.
+- Other problems are in [the manual's troubleshooting](../../docs/MANUAL.md#212-troubleshooting).
 
 ## Without the button
 

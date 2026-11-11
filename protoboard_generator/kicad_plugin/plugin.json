@@ -1,0 +1,21 @@
+{
+  "$schema": "https://go.kicad.org/api/schemas/v1",
+  "identifier": "io.github.mcesar67.mcboard",
+  "name": "MCboard",
+  "description": "Plans a circuit placed on an MCboard working copy: which chevrons to close and which wires to add.",
+  "runtime": {
+    "type": "python"
+  },
+  "actions": [
+    {
+      "identifier": "plan",
+      "name": "MCboard plan",
+      "description": "Work out which chevrons to close and which wires to add for the placed parts",
+      "show-button": true,
+      "scopes": ["pcb"],
+      "entrypoint": "plan_action.py",
+      "icons-light": ["icon_24.png", "icon_48.png"],
+      "icons-dark": ["icon_24.png", "icon_48.png"]
+    }
+  ]
+}

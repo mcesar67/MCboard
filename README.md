@@ -69,7 +69,8 @@ is in the [user manual](docs/MANUAL.md).
 - With `--top smt`, excess solder can close a chevron hidden under a part.
 - The planner is a heuristic: it always gives the same plan for the same board, but that plan may not have the fewest
   wires or chevrons, and placement decides whether a plan exists at all.
-- The KiCad button needs KiCad 9.0.
+- The KiCad button needs KiCad 9.0 or later with its API turned on, and fetches the `kicad-python` package the first
+  time.
 - Text in very dense characters, such as CJK at 1 mm, may fill in when printed.
 - There is no automated test suite yet.
 
