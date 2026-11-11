@@ -20,6 +20,9 @@ protoboard_generator/ATO2/
 # What the planner writes next to its test boards
 tests/**/*.pdf
 
+# Material for the forum post, not part of the project
+EEVBlog/
+
 # Instructions for Claude Code, not part of the project
 CLAUDE.md
 .claude/
