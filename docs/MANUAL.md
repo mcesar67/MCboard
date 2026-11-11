@@ -447,8 +447,8 @@ It copies the plugin to a folder named `mcboard_plan` in KiCad's plugin folder:
 
 | System | Default plugin folder |
 |---|---|
-| Linux | `~/.local/share/kicad/9.0/plugins` |
-| Windows, macOS | `~/Documents/KiCad/9.0/plugins` |
+| Linux | `~/.local/share/kicad/<version>/plugins` |
+| Windows, macOS | `~/Documents/KiCad/<version>/plugins` |
 
 If yours is elsewhere, for example when Windows keeps Documents in OneDrive, give it:
 
@@ -456,7 +456,7 @@ If yours is elsewhere, for example when Windows keeps Documents in OneDrive, giv
 python3 install_kicad_plugin.py --dir "C:\path\to\KiCad\9.0\plugins"
 ```
 
-`--version` changes the `9.0` in the default paths, for example `--version 10.0`.
+`<version>` is the newest KiCad version with a folder there, such as `10.0`. To install for another, add `--version 9.0`.
 
 Then restart the PCB editor. The first time, KiCad makes a Python environment for the button and fetches the
 `kicad-python` package into it, which needs the internet and takes a minute. The button appears on the toolbar as

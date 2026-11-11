@@ -8,7 +8,9 @@ replaces its own folder inside KiCad's plugin folder and, when installing to the
 earlier version of the button (a SWIG Action Plugin in scripting/plugins) if it finds it.
 
 Usage:
-  python3 install_kicad_plugin.py [--version 9.0] [--dir <plugin folder>]
+  python3 install_kicad_plugin.py [--version 10.0] [--dir <plugin folder>]
+
+Without --version it installs for the newest KiCad version that has a folder in KiCad's user folder.
 """
 
 import argparse
@@ -21,12 +23,28 @@ NAME = "mcboard_plan"
 PLUGIN_FILES = ("*.py", "plugin.json", "requirements.txt", "*.png")
 
 
-def documents_folder(version):
-    """Return KiCad's usual folder for this user's add-ons, for this system and KiCad version."""
+def kicad_folder():
+    """Return the folder that holds one folder per KiCad version, for this system."""
     home = Path.home()
     if sys.platform.startswith("linux"):
-        return home / ".local" / "share" / "kicad" / version
-    return home / "Documents" / "KiCad" / version
+        return home / ".local" / "share" / "kicad"
+    return home / "Documents" / "KiCad"
+
+
+def documents_folder(version):
+    """Return KiCad's usual folder for this user's add-ons, for this KiCad version."""
+    return kicad_folder() / version
+
+
+def newest_version():
+    """The newest KiCad version that has a folder here, such as 10.0, or 9.0 if there is none."""
+    found = []
+    for folder in kicad_folder().glob("*.*"):
+        major, _, minor = folder.name.partition(".")
+        if folder.is_dir() and major.isdigit() and minor.isdigit():
+            found.append((int(major), int(minor)))
+    major, minor = max(found, default=(9, 0))
+    return f"{major}.{minor}"
 
 
 def remove_old_button(version):
@@ -40,9 +58,10 @@ def remove_old_button(version):
 def main():
     """Copy the plugin and the protoboard package into KiCad's plugin folder."""
     ap = argparse.ArgumentParser(description="Install the 'MCboard plan' button in KiCad.")
-    ap.add_argument("--version", default="9.0", help="KiCad version folder (9.0)")
+    ap.add_argument("--version", help="KiCad version folder, such as 9.0 (default: the newest one found)")
     ap.add_argument("--dir", help="the plugin folder, if it is not the default one for that version")
     args = ap.parse_args()
+    args.version = args.version or newest_version()
     target = (Path(args.dir) if args.dir else documents_folder(args.version) / "plugins") / NAME
     if target.exists():
         shutil.rmtree(target)
